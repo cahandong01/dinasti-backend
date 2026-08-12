@@ -25,6 +25,15 @@ class EntityAttribute extends Model
         'valid_until' => 'date',
     ];
 
+    protected static function booted(): void
+    {
+        static::creating(function (EntityAttribute $entityAttribute) {
+            if (empty($entityAttribute->tenant_id) && $entityAttribute->entity_id) {
+                $entityAttribute->tenant_id = Entity::find($entityAttribute->entity_id)?->tenant_id;
+            }
+        });
+    }
+
     public function entity(): BelongsTo
     {
         return $this->belongsTo(Entity::class);

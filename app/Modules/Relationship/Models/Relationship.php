@@ -27,6 +27,15 @@ class Relationship extends Model
         'valid_until' => 'date',
     ];
 
+    protected static function booted(): void
+    {
+        static::creating(function (Relationship $relationship) {
+            if (empty($relationship->tenant_id) && $relationship->source_entity_id) {
+                $relationship->tenant_id = Entity::find($relationship->source_entity_id)?->tenant_id;
+            }
+        });
+    }
+
     public function sourceEntity(): BelongsTo
     {
         return $this->belongsTo(Entity::class, 'source_entity_id');
