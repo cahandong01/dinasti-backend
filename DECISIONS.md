@@ -252,6 +252,35 @@ pola D5):**
   
 ---
 
+## D13. Koneksi Database Aplikasi WAJIB Non-Superuser
+
+**Keputusan:** Koneksi database yang dipakai aplikasi (`.env` dev,
+`phpunit.xml` testing) WAJIB pakai user PostgreSQL non-superuser
+(`dinasti_app`) — BUKAN user `postgres` (superuser bawaan instalasi).
+User `postgres` tetap ada untuk kebutuhan administratif manual
+(pgAdmin/DBeaver), bukan untuk koneksi aplikasi sehari-hari.
+
+**Alasan (ditemukan lewat testing, bukan riset awal):** PostgreSQL
+secara desain **mengabaikan RLS untuk superuser**, termasuk yang sudah
+diaktifkan `FORCE ROW LEVEL SECURITY` (D10). Ini ketahuan lewat test
+`EntitySearchTest` yang gagal — entity dari tenant lain tetap muncul
+di hasil pencarian tenant lain, padahal RLS policy sudah benar. Root
+cause dikonfirmasi lewat query `pg_roles.rolsuper`: koneksi aplikasi
+ternyata connect sebagai `postgres` (`rolsuper = true`), sehingga
+SEMUA policy RLS yang sudah dibangun sejak awal project **tidak
+pernah benar-benar aktif** sampai keputusan ini diterapkan.
+
+**Pelajaran untuk ke depan:** test yang membuktikan isolasi tenant
+lintas-boundary (bukan cuma "data yang benar muncul", tapi juga "data
+yang salah TIDAK muncul") wajib ada sejak fitur pertama yang
+menyentuh data bertenant — bukan ditunda sampai ada fitur yang
+"kelihatan". `EntitySearchTest` kebetulan jadi test pertama yang
+benar-benar menguji cross-tenant boundary secara eksplisit; RBAC dan
+Tenant Context Middleware sebelumnya tidak menguji lapisan RLS ini
+karena scope-nya beda (role-checking, bukan data-row-checking).
+
+---
+
 ## STATUS ITEM YANG SENGAJA DITUNDA (bukan diabaikan)
 
 Item berikut dari review awal TIDAK diputuskan final sekarang karena

@@ -41,13 +41,12 @@ test('tenant bisa dibuat dan diberi akses ke region tertentu', function () {
         'name' => 'Research Tenant Banten',
         'slug' => 'tenant-banten',
     ]);
-
     $banten = Region::create([
         'name' => 'Banten',
         'code' => 'ID-BT',
         'level' => 'province',
     ]);
-
+    aktifkanTenantContext($tenant->id);
     $tenant->regions()->attach($banten->id, ['id' => \Illuminate\Support\Str::uuid7(), 'access_level' => 'full']);
 
     expect($tenant->regions)->toHaveCount(1);

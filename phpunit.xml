@@ -27,8 +27,8 @@
         <env name="DB_HOST" value="127.0.0.1"/>
         <env name="DB_PORT" value="5432"/>
         <env name="DB_DATABASE" value="dinasti_test"/>
-        <env name="DB_USERNAME" value="postgres"/>
-        <env name="DB_PASSWORD" value="Hammamfaiz01"/>
+        <env name="DB_USERNAME" value="dinasti_app"/>
+        <env name="DB_PASSWORD" value="DinastiApp2026Secure!"/>
         <env name="DB_URL" value=""/>
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>

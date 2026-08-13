@@ -44,7 +44,7 @@ expect()->extend('toBeOne', function () {
 |
 */
 
-function something()
+function aktifkanTenantContext(string $tenantId): void
 {
-    // ..
+    \Illuminate\Support\Facades\DB::statement("SET app.current_tenant = '{$tenantId}'");
 }

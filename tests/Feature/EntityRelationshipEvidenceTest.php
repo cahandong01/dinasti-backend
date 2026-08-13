@@ -15,6 +15,7 @@ function buatTenantDanRegion(): array
 {
     $tenant = Tenant::create(['name' => 'Research Tenant Banten', 'slug' => 'tenant-banten']);
     $region = Region::create(['name' => 'Banten', 'code' => 'ID-BT', 'level' => 'province']);
+    aktifkanTenantContext($tenant->id);
 
     return [$tenant, $region];
 }

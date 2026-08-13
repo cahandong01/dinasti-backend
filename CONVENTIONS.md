@@ -193,6 +193,14 @@ error saat runtime — bukan saat migration. Selalu cocokkan nama tabel
 di migration dengan nama yang Eloquent tebak sebelum lanjut; kalau
 beda, WAJIB tambahkan `$table` eksplisit ini.
 
+**Update:** aturan yang sama berlaku juga untuk `artisan make:controller`
+(dan kemungkinan `make:*` lain yang generate file ke lokasi default
+Laravel) — selalu cek dulu lokasi file yang di-generate sebelum lanjut
+isi kontennya, karena default-nya SELALU `app/Http/Controllers/` atau
+`app/Models/`, bukan `app/Modules/{Modul}/...`. Kalau nyasar, hapus dan
+pindah manual ke lokasi final, JANGAN coba-coba pakai flag `--path`
+(tidak didukung native oleh `make:*` command).
+
 ### 2.5 Naming convention
 
 | Elemen | Konvensi | Contoh |
