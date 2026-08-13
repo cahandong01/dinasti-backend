@@ -2,6 +2,7 @@
 
 namespace App\Modules\Entity\Models;
 
+use App\Modules\Relationship\Models\Relationship;
 use App\Modules\TenantRegion\Models\Region;
 use App\Modules\TenantRegion\Models\Tenant;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
@@ -33,6 +34,16 @@ class Entity extends Model
 
     public function attributes(): HasMany
     {
-        return $this->hasMany(\App\Modules\Entity\Models\EntityAttribute::class);
+        return $this->hasMany(EntityAttribute::class);
+    }
+
+    public function relationshipsAsSource(): HasMany
+    {
+        return $this->hasMany(Relationship::class, 'source_entity_id');
+    }
+
+    public function relationshipsAsTarget(): HasMany
+    {
+        return $this->hasMany(Relationship::class, 'target_entity_id');
     }
 }
