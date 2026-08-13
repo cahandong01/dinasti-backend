@@ -1,83 +1,96 @@
 # PETA GURITA DINASTI — MASTER TRACKER
-Living document — diupdate Claude tiap ada progress baru.
+Living document — diupdate Claude tiap ada progress numpuk.
 Root project: D:\dinasti\dinasti-backend
 Referensi wajib: CONVENTIONS.md, DECISIONS.md (satu folder ini)
+
+---
+
+## GLOSARIUM SINGKAT
+
+- **Tenant** = pemilik/pengelola ruang data (contoh: "Research Tenant Banten"). Data antar tenant terisolasi.
+- **Region** = wilayah geografis yang dibahas (Banten, dst). Terpisah dari tenant — satu tenant bisa riset banyak region.
+- **RLS** = Row-Level Security, lapis pengaman di level PostgreSQL sendiri, nolak baris data yang bukan milik tenant aktif — bahkan kalau kode Laravel ada bug lupa filter.
 
 ---
 
 ## STATUS RINGKAS
 
 **Fase sekarang:** Phase 1 — MVP Foundation
-**Sedang dikerjakan:** Auth & RBAC (Sanctum sudah, RBAC belum)
+**Sedang dikerjakan:** API endpoint tambahan (Entity Create/Update, atau Relationship API)
 **Stack terkonfirmasi:** Laravel 13.24.0, PostgreSQL 18 lokal, Redis (Predis), Pest PHP
+**Total test:** 26/26 PASSED
+**Repo:** github.com/cahandong01/dinasti-backend (up to date, commit terakhir 1742a7f)
 
 ---
 
 ## SELESAI ✅
 
-### Database — 8 tabel fondasi (semua migrated & PASSED testing)
-- [x] `regions` — hierarki self-reference (parent_id), language_code default 'id'
-- [x] `tenants` — tanpa region_id (tenant & region dimensi terpisah)
-- [x] `tenant_region_access` — pivot many-to-many, default access_level 'read_only' (DENY-by-default)
-- [x] `entities` — tabel generic person/company/institution via kolom type, tenant_id+region_id wajib, status default 'draft'
-- [x] `sources` — nama, type, url, reliability default 'unverified', published_at
-- [x] `evidences` — excerpt+locator, FK ke source_id
-- [x] `entity_attributes` — bitemporal (valid_from/valid_until), evidence_id WAJIB, constraint EXCLUDE USING gist (btree_gist)
-- [x] `relationships` — source_entity_id & target_entity_id, type, evidence_id WAJIB, bitemporal + EXCLUDE USING gist sama seperti entity_attributes
+### Database — 8 tabel fondasi + 2 kolom tambahan
+- [x] `regions`, `tenants`, `tenant_region_access`, `entities`, `sources`, `evidences`, `entity_attributes`, `relationships`
+- [x] Kolom `tenant_id` ditambah langsung ke `entity_attributes` & `relationships` (awalnya cuma via `entity_id`) — demi performa RLS (subquery tidak bisa dioptimasi planner)
+- [x] pg_trgm extension aktif + index GIN di `entities.name` (fuzzy search)
 
-### Models (Eloquent, app/Modules/{Modul}/Models/, semua pakai HasUuids)
-- [x] Region, Tenant, TenantRegionAccess (modul TenantRegion)
-- [x] Entity, EntityAttribute (modul Entity)
-- [x] Source, Evidence (modul Evidence) — catatan: Evidence model wajib `$table = 'evidences'` eksplisit (uncountable noun trap)
-- [x] Relationship (modul Relationship)
+### RLS (Row-Level Security) — D10 + D13
+- [x] 6 tabel ber-RLS: entities, sources, evidences, entity_attributes, relationships, tenant_region_access
+- [x] **Bug kritis ditemukan & diperbaiki (D13):** koneksi app awalnya pakai user `postgres` (superuser) — RLS otomatis di-bypass PostgreSQL untuk superuser. User baru `dinasti_app` (non-superuser) dibuat, jadi pemilik semua tabel, `.env`+`phpunit.xml` diupdate pakai kredensial baru. RLS sekarang BENERAN aktif, tervalidasi test cross-tenant.
 
-### Testing (Pest PHP, database dinasti_test terpisah dari dinasti)
-- [x] TenantRegionTest.php — 4 test PASSED (UUID otomatis, hierarki region, tenant-region access, DENY-by-default)
-- [x] EntityRelationshipEvidenceTest.php — 5 test PASSED (entity default draft, entity_attribute wajib evidence, relationship wajib evidence, dst)
+### Auth & RBAC — D11, D12
+- [x] Laravel Sanctum v4.3.3 (SPA/API token auth)
+- [x] spatie/laravel-permission mode "teams" (`tenant_id` sebagai team_foreign_key)
+- [x] 5 role: SUPER_ADMIN (global), TENANT_ADMIN/RESEARCHER/LEGAL_REVIEWER (per-tenant), PUBLIC_USER (default tanpa role)
+- [x] Separation of duties tervalidasi: RESEARCHER ≠ LEGAL_REVIEWER
 
-### Data seed — kasus Banten (WOW case pertama)
-- [x] RegionSeeder — Indonesia → Banten (36) → Kota Serang (36.73), Tangerang Selatan (36.74), Kabupaten Lebak (36.02)
-- [x] Tenant "Research Tenant Banten" (slug tenant-banten), akses full ke 4 region di atas
-- [x] BantenCaseSeeder — 3 entities (Ratu Atut Chosiyah, Tubagus Chaeri Wardana/Wawan, Dinas Kesehatan Provinsi Banten), 1 source (Liputan6, unverified), 1 evidence, 2 relationships (corruption_scheme, family_affiliation) — semua status draft sesuai gate legal
+### Tenant Context Middleware — E08
+- [x] `TenantContext.php` (alias `tenant.context`) — baca header `X-Tenant-ID`, validasi user punya role di tenant itu, aktifkan `setPermissionsTeamId()` + `SET app.current_tenant` (buat RLS)
 
-### Auth — Sanctum (D11)
-- [x] Dikonfirmasi Laravel versi 13.24.0 → cara install beda dari tutorial lama, cukup `php artisan install:api`
-- [x] Sanctum v4.3.3 terpasang, migration `personal_access_tokens` jalan
-- [x] `routes/api.php` dibuat otomatis (contoh route `/user` pakai `auth:sanctum`)
-- [x] `bootstrap/app.php` sudah terdaftar routing api
-- [x] Trait `HasApiTokens` ditambahkan manual ke `app/Models/User.php`
+### API Endpoint
+- [x] `GET /api/entities/search` (E17) — fuzzy search pakai pg_trgm, filter by type, pagination
+- [x] `GET /api/entities/{id}` — detail lengkap: atribut bitemporal + evidence trail + relationship dua arah (source & target)
+
+### Data seed — kasus Banten
+- [x] RegionSeeder (Indonesia → Banten → 3 kota/kabupaten), Tenant "Research Tenant Banten", BantenCaseSeeder (3 entities, 1 source, 1 evidence, 2 relationships — semua status draft)
+- [x] RoleSeeder (4 role: 1 global + 3 per-tenant)
+
+### Governance/Keamanan tambahan
+- [x] `.env` dikonfirmasi aman di `.gitignore`, tidak pernah ke-commit
+- [ ] DDoS protection (Cloudflare/Deflect) — BELUM disetting, levelnya infrastruktur, nanti pas deploy
+- [ ] Rate limiting API — masih "ditunda" di DECISIONS.md, DIUSULKAN dipercepat mengingat risiko platform ini jadi target (dinasti politik)
 
 ---
 
 ## SEDANG DIKERJAKAN 🔧
 
-### RBAC (lanjutan D11)
-- [ ] Keputusan diambil: pakai `spatie/laravel-permission` mode **"teams"** (role beda per tenant per user), pakai `tenant_id` sebagai team_foreign_key — konsisten dengan D10 (shared database)
-- [ ] Install package
-- [ ] Konfigurasi teams mode
-- [ ] Definisikan role apa saja yang dibutuhkan (belum diputuskan — perlu didiskusikan: SUPER_ADMIN, TENANT_ADMIN, RESEARCHER/EDITOR, LEGAL_REVIEWER, PUBLIC_USER?)
-- [ ] Migration & testing
+- [ ] Endpoint berikutnya belum diputuskan — kandidat: Entity Create/Update API (dengan legal review gate D7), Relationship Create API, atau Rate Limiting (keamanan)
 
 ---
 
-## BELUM DIMULAI (urutan sesuai Master Tracker asli / dependency E07→E08/E09→E17)
+## BELUM DIMULAI
 
-- [ ] Tenant/Region Context Middleware (E08) — baca header X-Region-ID, set context per request
-- [ ] PostgreSQL Row-Level Security (RLS) per D10 — lapis tambahan isolasi tenant di level database
-- [ ] API Endpoint pertama (Entity Search API, dst — E17)
-- [ ] Legal Review Gate state machine (D7) — DRAFT → PENDING_REVIEW → PUBLISHED
+- [ ] Entity Create/Update API + validasi legal review gate (D7): DRAFT → PENDING_REVIEW → PUBLISHED
+- [ ] Correction/dispute path (janji ke publik, prinsip governance awal)
+- [ ] Rate limiting / anti-scraping untuk PUBLIC_USER
+- [ ] Graph traversal API (Find Connection, Explore Network) — hard cap 4 hop (D1)
 - [ ] Frontend (React + TypeScript + Cytoscape.js) — belum dimulai sama sekali
+- [ ] DDoS protection & hardening infrastruktur (Cloudflare/Deflect) — sebelum go-live
 
 ---
 
-## KEPUTUSAN PENTING YANG SUDAH DIAMBIL DI LUAR DECISIONS.md ASLI
-(kalau sudah final & berulang dipakai, sebaiknya dipromosikan jadi entri resmi di DECISIONS.md)
+## KEPUTUSAN DI DECISIONS.md (RINGKAS)
 
-- RBAC pakai spatie/laravel-permission mode teams (belum masuk DECISIONS.md sebagai D12 — pending konfirmasi final)
+D1 hop-limit graph · D2 pg_trgm search · D3 Event+Redis · D4 AI retrieval-then-generate · D5 entity resolution threshold · D6 bitemporal attributes · D7 legal review gate · D8 UUID v7 · D9 PWA · D10 shared DB + RLS · D11 Sanctum · D12 RBAC teams mode · **D13 (baru) koneksi app wajib non-superuser**
+
+---
+
+## PELAJARAN PENTING (biar gak keulang)
+
+- `artisan make:model`, `make:controller`, `make:request` (dan kemungkinan `make:*` lain) SELALU naruh file ke lokasi default Laravel, bukan ke `app/Modules/{Modul}/...` — cek dulu lokasi sebelum lanjut isi, jangan asumsi.
+- RLS itu **otomatis diabaikan untuk superuser PostgreSQL** — koneksi app WAJIB non-superuser, atau RLS cuma ilusi (D13).
+- Test yang membuktikan "data yang salah TIDAK muncul" (bukan cuma "data yang benar muncul") itu WAJIB ada sejak fitur pertama yang sentuh data bertenant — jangan ditunda sampai fitur "kelihatan".
 
 ---
 
 ## CHANGE LOG
 | Tanggal | Update |
 |---|---|
-| 2026-08-12 | File dibuat. Progress s/d Sanctum install lengkap dicatat. RBAC (spatie/laravel-permission teams mode) direkomendasikan, menunggu konfirmasi final user. |
+| 2026-08-12 | File dibuat. Progress s/d Sanctum install lengkap dicatat. |
+| 2026-08-13 | Update besar: RBAC (D12), E08 Middleware, RLS (D10) selesai + bug kritis D13 ditemukan&diperbaiki, Entity Search API (E17), Entity Detail API selesai. 26/26 test passed. |
