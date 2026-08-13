@@ -5,6 +5,7 @@ use App\Modules\Entity\Controllers\EntityDetailController;
 use App\Modules\Entity\Controllers\EntityReviewController;
 use App\Modules\Entity\Controllers\EntitySearchController;
 use App\Modules\Relationship\Controllers\RelationshipCreateController;
+use App\Modules\Relationship\Controllers\RelationshipReviewController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -20,10 +21,13 @@ Route::middleware(['auth:sanctum', 'tenant.context'])->group(function () {
         Route::post('/entities', [EntityCreateController::class, 'store']);
         Route::patch('/entities/{id}/submit-for-review', [EntityReviewController::class, 'submitForReview']);
         Route::post('/relationships', [RelationshipCreateController::class, 'store']);
+        Route::patch('/relationships/{id}/submit-for-review', [RelationshipReviewController::class, 'submitForReview']);
     });
 
     Route::middleware(['role:LEGAL_REVIEWER|SUPER_ADMIN'])->group(function () {
         Route::patch('/entities/{id}/publish', [EntityReviewController::class, 'publish']);
         Route::patch('/entities/{id}/request-revision', [EntityReviewController::class, 'requestRevision']);
+        Route::patch('/relationships/{id}/publish', [RelationshipReviewController::class, 'publish']);
+        Route::patch('/relationships/{id}/request-revision', [RelationshipReviewController::class, 'requestRevision']);
     });
 });
