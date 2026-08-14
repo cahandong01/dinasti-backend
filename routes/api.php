@@ -10,6 +10,7 @@ use App\Modules\Entity\Controllers\EntityUpdateController;
 use App\Modules\Relationship\Controllers\RelationshipUpdateController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use App\Modules\Graph\Controllers\NetworkExploreController;
 
 Route::get('/user', function (Request $request) {
     return $request->user();
@@ -18,6 +19,7 @@ Route::get('/user', function (Request $request) {
 Route::middleware(['auth:sanctum', 'tenant.context'])->group(function () {
     Route::get('/entities/search', [EntitySearchController::class, 'search']);
     Route::get('/entities/{id}', [EntityDetailController::class, 'show']);
+    Route::get('/entities/{id}/network', [NetworkExploreController::class, 'explore']);
 
     Route::middleware(['role:RESEARCHER|TENANT_ADMIN|SUPER_ADMIN'])->group(function () {
         Route::post('/entities', [EntityCreateController::class, 'store']);
