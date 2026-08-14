@@ -7,6 +7,7 @@ use App\Modules\Entity\Controllers\EntitySearchController;
 use App\Modules\Relationship\Controllers\RelationshipCreateController;
 use App\Modules\Relationship\Controllers\RelationshipReviewController;
 use App\Modules\Entity\Controllers\EntityUpdateController;
+use App\Modules\Relationship\Controllers\RelationshipUpdateController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -23,6 +24,7 @@ Route::middleware(['auth:sanctum', 'tenant.context'])->group(function () {
         Route::patch('/entities/{id}', [EntityUpdateController::class, 'update']);
         Route::patch('/entities/{id}/submit-for-review', [EntityReviewController::class, 'submitForReview']);
         Route::post('/relationships', [RelationshipCreateController::class, 'store']);
+        Route::patch('/relationships/{id}', [RelationshipUpdateController::class, 'update']);
         Route::patch('/relationships/{id}/submit-for-review', [RelationshipReviewController::class, 'submitForReview']);
     });
 
