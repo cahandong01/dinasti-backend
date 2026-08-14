@@ -14,14 +14,22 @@ use App\Modules\Graph\Controllers\NetworkExploreController;
 
 Route::get('/user', function (Request $request) {
     return $request->user();
-})->middleware('auth:sanctum');
+})->middleware(['auth:sanctum', 'throttle:api']);
 
 Route::middleware(['auth:sanctum', 'tenant.context'])->group(function () {
-    Route::get('/entities/search', [EntitySearchController::class, 'search']);
-    Route::get('/entities/{id}', [EntityDetailController::class, 'show']);
-    Route::get('/entities/{id}/network', [NetworkExploreController::class, 'explore']);
 
-    Route::middleware(['role:RESEARCHER|TENANT_ADMIN|SUPER_ADMIN'])->group(function () {
+    // Endpoint pencarian — rawan scraping/enumeration, limiter khusus
+    Route::get('/entities/search', [EntitySearchController::class, 'search'])
+        ->middleware('throttle:search');
+
+    Route::get('/entities/{id}', [EntityDetailController::class, 'show'])
+        ->middleware('throttle:api');
+
+    // Graph traversal — query paling berat, limiter paling ketat
+    Route::get('/entities/{id}/network', [NetworkExploreController::class, 'explore'])
+        ->middleware('throttle:graph');
+
+    Route::middleware(['role:RESEARCHER|TENANT_ADMIN|SUPER_ADMIN', 'throttle:api'])->group(function () {
         Route::post('/entities', [EntityCreateController::class, 'store']);
         Route::patch('/entities/{id}', [EntityUpdateController::class, 'update']);
         Route::patch('/entities/{id}/submit-for-review', [EntityReviewController::class, 'submitForReview']);
@@ -30,7 +38,7 @@ Route::middleware(['auth:sanctum', 'tenant.context'])->group(function () {
         Route::patch('/relationships/{id}/submit-for-review', [RelationshipReviewController::class, 'submitForReview']);
     });
 
-    Route::middleware(['role:LEGAL_REVIEWER|SUPER_ADMIN'])->group(function () {
+    Route::middleware(['role:LEGAL_REVIEWER|SUPER_ADMIN', 'throttle:api'])->group(function () {
         Route::patch('/entities/{id}/publish', [EntityReviewController::class, 'publish']);
         Route::patch('/entities/{id}/request-revision', [EntityReviewController::class, 'requestRevision']);
         Route::patch('/relationships/{id}/publish', [RelationshipReviewController::class, 'publish']);
