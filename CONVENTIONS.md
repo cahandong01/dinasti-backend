@@ -201,6 +201,103 @@ isi kontennya, karena default-nya SELALU `app/Http/Controllers/` atau
 pindah manual ke lokasi final, JANGAN coba-coba pakai flag `--path`
 (tidak didukung native oleh `make:*` command).
 
+### 2.4C Pattern Wajib: Service Layer untuk State Machine (Legal Review Gate D7)
+
+Setiap resource yang tunduk ke legal review gate (entities, relationships, dan
+resource sejenis di masa depan) WAJIB punya Service terpisah khusus buat
+transisi status, dengan SATU sumber kebenaran tunggal:
+
+```php
+private const TRANSISI_VALID = [
+    'draft' => ['pending_review'],
+    'pending_review' => ['published', 'needs_revision'],
+    'published' => ['needs_revision'],
+    'needs_revision' => ['pending_review'],
+];
+```
+
+JANGAN sebar logic validasi transisi ke controller/model/tempat lain. Kalau
+nanti ada resource baru yang butuh state machine sejenis, WAJIB pakai pola
+identik ini (lihat `EntityReviewService`/`RelationshipReviewService` sebagai
+contoh acuan).
+
+**Aturan edit langsung (bukan lewat state machine):** resource yang statusnya
+`pending_review` atau `published` WAJIB "terkunci" — TIDAK BOLEH diedit
+langsung lewat endpoint update biasa. Cuma `draft`/`needs_revision` yang boleh
+diedit langsung. Ini bukan preferensi internal — riset mengonfirmasi ini pola
+standar industri CMS/governance (Sanity, dotCMS, Contensis, dst).
+
+### 2.4D Pattern Wajib: Validasi FormRequest yang Otomatis Ter-scope RLS
+
+Kalau butuh validasi "ID ini milik tenant yang sama", JANGAN tulis query
+manual — cukup pakai `exists:tabel,id` di FormRequest. Karena query validasi
+itu jalan di koneksi database yang sama (yang sudah kena RLS dari
+`tenant.context` middleware), otomatis "tidak ketemu" kalau ID itu milik
+tenant lain — walau sebenarnya ada di database. Ini bukan trik, ini efek
+samping RLS yang memang diinginkan (lihat `RelationshipCreateRequest` sebagai
+contoh).
+
+### 2.4E Pattern WAJIB: Refresh Setelah Create (Kolom dengan Default Database)
+
+Kalau model punya kolom dengan default value di level database (misal
+`status` default `'draft'`), method `::create()` Eloquent TIDAK otomatis
+sinkron nilai default itu ke object PHP di memori — hasilnya `null` walau di
+database sudah benar. WAJIB panggil `->refresh()` setelah `create()` kalau
+response API butuh nilai kolom itu:
+
+```php
+$entity = Entity::create([...]);
+return $entity->refresh(); // WAJIB, jangan skip
+```
+
+### 2.4F Pattern WAJIB: Query yang JOIN 2 Tabel dengan Nama Kolom Sama
+
+Kalau query (termasuk lewat Eloquent relasi) menyentuh 2 tabel yang
+sama-sama punya kolom bernama sama (kasus paling umum: `tenant_id` di
+`roles` DAN `model_has_roles` — pola "teams" Spatie), WAJIB qualify nama
+tabelnya secara eksplisit:
+
+```php
+// SALAH — ambigu, PostgreSQL akan error "column reference is ambiguous"
+$user->roles()->whereNull('tenant_id')->where('name', 'SUPER_ADMIN')->exists();
+
+// BENAR
+$user->roles()->whereNull('roles.tenant_id')->where('roles.name', 'SUPER_ADMIN')->exists();
+```
+
+### 2.4G Pattern WAJIB: Recursive CTE untuk Graph Traversal (D1)
+
+Semua fitur traversal graph (Explore Network, Find Connection, Cross-Region
+Explorer) WAJIB pakai pola `WITH RECURSIVE` dengan 2 pengaman:
+
+1. **Array `path`** — lacak entity yang sudah dilewati, cegah infinite loop
+   di graph yang bersiklus (`A→B→C→A`).
+2. **Depth counter di level query** (`WHERE n.depth < ?`) — hard-cap 4 hop
+   (D1) ditegakkan DI QUERY, bukan dipotong belakangan di PHP setelah data
+   sudah terlanjur diambil semua.
+
+Traversal WAJIB dua arah — relationship punya `source_entity_id` dan
+`target_entity_id`, jadi query harus bisa "lompat" dari sisi manapun:
+
+```sql
+CASE WHEN r.source_entity_id = n.entity_id
+     THEN r.target_entity_id
+     ELSE r.source_entity_id END
+```
+
+Lihat `NetworkExploreService.php` sebagai contoh acuan lengkap.
+
+### 2.4H PERINGATAN: Eksekusi Command vs Tempel Kode
+
+Kalau memberi instruksi kerja lewat asisten AI (Claude), TEGASKAN dengan
+jelas mana yang "command buat dijalankan di CMD" vs "kode buat ditempel di
+editor (VSCode)" — terutama kalau kodenya mengandung karakter spesial
+(`(`, `)`, `$`, `>`). Command Prompt Windows bisa salah artikan karakter itu
+sebagai redirect/perintah kalau kecelakaan dijalankan sebagai command,
+menghasilkan file sampah dengan nama aneh (pernah terjadi, lihat
+MASTER_TRACKER.md bagian "Insiden & Pelajaran").
+
+
 ### 2.5 Naming convention
 
 | Elemen | Konvensi | Contoh |

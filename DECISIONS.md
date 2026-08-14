@@ -281,6 +281,49 @@ karena scope-nya beda (role-checking, bukan data-row-checking).
 
 ---
 
+## D14. Frontend Graph Rendering Stack (Cross-Reference)
+
+**Keputusan:** Frontend (repo terpisah) mengunci **Sigma.js + Graphology**
+sebagai graph rendering stack, menggantikan **Cytoscape.js** yang sempat
+jadi baseline di blueprint awal. Status: **FINAL TECHNOLOGY LOCK** (lihat
+frontend blueprint v1.3, bagian 29).
+
+**Alasan:** Perubahan ini dilakukan lewat evaluasi eksplisit
+Sigma-vs-Cytoscape yang diminta, BUKAN keputusan sembarangan — dan
+dilakukan justru karena implementasi frontend belum dimulai sama sekali
+(momen paling murah buat ganti keputusan teknis). Sigma.js secara spesifik
+didesain buat visualisasi graph WebGL skala ribuan node/edge (dibangun di
+atas Graphology sebagai lapisan struktur data/algoritma).
+
+**Kenapa dicatat di DECISIONS.md backend, padahal ini keputusan frontend:**
+supaya sesi Claude berikutnya yang kerja di backend TIDAK bingung atau
+menyarankan balik ke Cytoscape.js tanpa tau ini sudah diputuskan dan
+dikunci. Backend TIDAK PERLU berubah apapun akibat keputusan ini —
+`GET /api/entities/{id}/network` (Explore Network, lihat progress di
+MASTER_TRACKER.md) sengaja balikin format generic (array `entities` +
+array `relationships`), BUKAN format spesifik Cytoscape/Sigma/Graphology.
+Transformasi ke format Graphology adalah tanggung jawab frontend
+sepenuhnya, lewat adapter/hooks layer yang mereka bangun sendiri — backend
+tidak perlu tau atau peduli soal ini.
+
+**Kontrak yang WAJIB dipegang backend ke depan:**
+- JANGAN ubah shape response Graph API jadi spesifik ke satu library
+  visualisasi tertentu — tetap generic (entities + relationships + metadata
+  seperti `hop_distance`).
+- Kalau frontend butuh field tambahan buat kebutuhan Graphology (misal
+  posisi node, warna, dst), itu HARUS dihitung/ditransformasi di sisi
+  frontend, BUKAN dipindah tanggung jawabnya ke backend.
+- Backend TIDAK PERLU tau detail teknis Sigma.js/Graphology — cukup tau
+  bahwa "frontend akan mengolah response generic ini jadi apapun yang
+  Sigma butuhkan."
+
+**LOCK PRINCIPLE (dikutip dari blueprint frontend v1.3):** jangan ganti
+Next.js, React, TypeScript, Sigma.js, Graphology, TanStack Query, atau API
+boundary tanpa requirement native yang benar-benar muncul, dilengkapi ADR
++ benchmark ulang — bukan spekulasi atau preferensi sesaat.
+
+---
+
 ## STATUS ITEM YANG SENGAJA DITUNDA (bukan diabaikan)
 
 Item berikut dari review awal TIDAK diputuskan final sekarang karena
