@@ -15,12 +15,12 @@ Referensi wajib: CONVENTIONS.md, DECISIONS.md (satu folder ini)
 
 ---
 
-## STATUS RINGKAS (per 2026-08-14)
+## STATUS RINGKAS (per 2026-08-15)
 
 **Fase sekarang:** Phase 1 — MVP Foundation, mendekati selesai
 **Stack backend terkonfirmasi:** Laravel 13.24.0, PostgreSQL 18 lokal, Redis (Predis), Pest PHP
-**Total test:** 64/64 PASSED
-**Repo backend:** github.com/cahandong01/dinasti-backend (commit terakhir: 1f92b6c)
+**Total test:** 66/66 PASSED
+**Repo backend:** github.com/cahandong01/dinasti-backend (commit terakhir: 53d7504)
 **Kredensial DB:** JANGAN pakai user `postgres` (superuser) — WAJIB `dinasti_app` (non-superuser). Lihat D13.
 
 ---
@@ -71,6 +71,13 @@ Referensi wajib: CONVENTIONS.md, DECISIONS.md (satu folder ini)
 - [ ] Find Connection (jalur terpendek 2 entity spesifik) — BELUM dibangun
 - [ ] Cross-Region Explorer — BELUM dibangun
 
+### Rate Limiting — mitigasi OWASP API4:2023 (Unrestricted Resource Consumption)
+- [x] 4 limiter bernama: `auth` (5/menit/IP), `graph` (guest 10/menit/IP, authenticated 30/menit/user), `search` (30/menit), `api` default (guest 20/menit, authenticated 60/menit)
+- [x] Angka disimpan terpusat di `config/rate_limits.php`, didaftarkan di `AppServiceProvider::boot()` — satu sumber kebenaran, tidak hardcode di provider
+- [x] Terpasang di route: `throttle:search` di Entity Search, `throttle:graph` di Explore Network, `throttle:api` di sisanya
+- [x] Test `RateLimitingTest.php` (2 test): buktikan 429 setelah lewat batas authenticated (30/menit), dan request ke-30 (masih dalam batas) tetap lolos
+- **CATATAN ARSITEKTUR PENTING:** cabang `guest_per_minute` di limiter `graph` & `api` UNREACHABLE saat ini — semua route ada di dalam grup `auth:sanctum`, jadi request tanpa token sudah ditolak 401 SEBELUM sempat kena throttle. Limiter `auth` (5/menit, buat login) JUGA belum terpasang ke route manapun karena belum ada endpoint login sama sekali (lihat "BELUM DIMULAI" — User/Profile Management API). Cabang guest & limiter `auth` baru "hidup" begitu ada mekanisme akses publik/login beneran.
+
 ### Data seed — kasus Banten
 - [x] RegionSeeder, TenantSeeder ("Research Tenant Banten"), BantenCaseSeeder (3 entities, 1 source, 1 evidence, 2 relationships), RoleSeeder (4 role awal)
 
@@ -114,6 +121,8 @@ Referensi wajib: CONVENTIONS.md, DECISIONS.md (satu folder ini)
 
 9. **Validasi FormRequest dengan `exists:tabel,id` itu OTOMATIS ke-scope RLS** (karena jalan di koneksi tenant yang sama) — bisa dipakai sebagai validasi "kepunyaan tenant yang sama" GRATIS tanpa kode manual tambahan.
 
+10. **Rate limiter yang taruh cabang "guest" (`$request->user() ? ... : ...`) di dalam route yang sudah dibungkus `auth:sanctum` itu KODE MATI.** `auth:sanctum` selalu jalan duluan dan nolak request tanpa token dengan 401 sebelum sempat nyampe ke limiter — cabang guest baru reachable kalau ada route yang genuinely public (di luar `auth:sanctum`). Ketahuan pas riset test rate limiting, bukan lewat asumsi.
+
 ---
 
 ## KEPUTUSAN DI DECISIONS.md (RINGKAS)
@@ -124,12 +133,11 @@ D1 hop-limit graph (4 hop, Explore Network SELESAI, Find Connection & Cross-Regi
 
 ## BELUM DIMULAI
 
-- [ ] Find Connection API (D1) — jalur terpendek antar 2 entity spesifik
+- [ ] Find Connection API (D1) — jalur terpendek antar 2 entity spesifik (SEDANG DIKERJAKAN SEKARANG)
 - [ ] Cross-Region Explorer (D1)
-- [ ] Rate limiting / anti-scraping untuk PUBLIC_USER — masih "ditunda" di DECISIONS.md, DIUSULKAN dipercepat (risiko platform jadi target politik)
 - [ ] Dispute Submission — jalur publik formal buat pihak luar ngajuin keberatan/koreksi resmi (sekarang transisi published→needs_revision masih manual, LEGAL_REVIEWER harus tau dari luar sistem)
 - [ ] Audit Trail lengkap (E35) — sengaja ditunda, cuma ada minimal reviewed_by/reviewed_at sekarang
-- [ ] User/Profile management API (registrasi, ganti password, kelola anggota tim per tenant) — belum tersentuh sama sekali
+- [ ] User/Profile Management API (registrasi, login, ganti password, kelola anggota tim per tenant) — belum tersentuh sama sekali. Ini juga blocker buat limiter `auth` dan cabang guest di limiter lain jadi reachable.
 - [ ] DDoS protection & hardening infrastruktur (Cloudflare/Deflect) — level infrastruktur, sebelum go-live
 - [ ] PostgreSQL Row-Level Security untuk tabel `roles`/`model_has_roles`/dst (Spatie tables) — belum dievaluasi apakah perlu
 
@@ -150,3 +158,4 @@ D1 hop-limit graph (4 hop, Explore Network SELESAI, Find Connection & Cross-Regi
 | 2026-08-12 | File dibuat. Progress s/d Sanctum install lengkap dicatat. |
 | 2026-08-13 | RBAC (D12), E08 Middleware, RLS (D10) selesai + bug kritis D13 ditemukan&diperbaiki, Entity Search+Detail API. |
 | 2026-08-14 | Update besar: Entity Create/Update/Review, Relationship Create/Update/Review (legal review gate D7 lengkap 2 sisi), Graph Traversal Explore Network (D1) selesai. Insiden file sampah ke-commit (sudah bersih). Frontend blueprint v1.3 diketahui: Sigma.js+Graphology locked. 64/64 test passed. Sesi ditutup, resume lengkap disusun buat sesi berikutnya (dokumen ini + CONVENTIONS.md + DECISIONS.md diupdate). |
+| 2026-08-15 | Sesi 3: Rate Limiting selesai (4 limiter, OWASP API4:2023) + test khusus (66/66 total). Temuan arsitektur: cabang guest limiter unreachable sampai ada login/akses publik. Commit 53d7504. Lanjut ke Find Connection API (D1). |
