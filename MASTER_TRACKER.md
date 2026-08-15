@@ -19,8 +19,8 @@ Referensi wajib: CONVENTIONS.md, DECISIONS.md (satu folder ini)
 
 **Fase sekarang:** Phase 1 — MVP Foundation, mendekati selesai
 **Stack backend terkonfirmasi:** Laravel 13.24.0, PostgreSQL 18 lokal, Redis (Predis), Pest PHP
-**Total test:** 66/66 PASSED
-**Repo backend:** github.com/cahandong01/dinasti-backend (commit terakhir: 53d7504)
+**Total test:** 73/73 PASSED
+**Repo backend:** github.com/cahandong01/dinasti-backend (commit terakhir: c44085b)
 **Kredensial DB:** JANGAN pakai user `postgres` (superuser) — WAJIB `dinasti_app` (non-superuser). Lihat D13.
 
 ---
@@ -68,13 +68,19 @@ Referensi wajib: CONVENTIONS.md, DECISIONS.md (satu folder ini)
 
 **Graph (fitur flagship D1):**
 - [x] `GET /api/entities/{id}/network?depth=N` (max 4, default 2) — Explore Network, recursive CTE, traversal dua arah, anti-infinite-loop
-- [ ] Find Connection (jalur terpendek 2 entity spesifik) — BELUM dibangun
+- [x] `GET /api/entities/{id}/find-connection?target_id=X` — Find Connection, jalur TERPENDEK antara 2 entity spesifik. Detail keputusan:
+  - Selalu cari sampai hard-cap 4 hop (D1), **TANPA parameter `depth` user-configurable** — preseden riset: fitur "Degree of Connection" LinkedIn juga fixed system-wide cap, jawaban biner (ada koneksi dalam batas / tidak), bukan radius pilihan user.
+  - Bidirectional search (cari dari 2 ujung sekaligus) DITOLAK secara sadar — keuntungannya cuma kerasa di graph jauh lebih dalam dari 4 hop, sementara kompleksitas implementasi SQL-nya jauh lebih tinggi (YAGNI).
+  - Response: `connected: true/false` + `depth` + `entities`/`relationships` berurutan sesuai jalur asli (bukan urutan random hasil `whereIn`).
+  - Entity ada tapi TIDAK ada jalur dalam 4 hop → `200` + `connected: false` (BUKAN 404) — konsisten prinsip REST "resource ada, hasil query kosong itu bukan error". `404` dikhususkan buat entity source/target yang genuinely tidak ada.
+  - `target_id` sama dengan source (di URL) ditolak `422` di FormRequest.
+  - Query CTE beda dari `NetworkExploreService`: nambah kolom `rel_path` (urutan relationship, bukan cuma entity) — dibutuhkan karena jawaban Find Connection adalah JALUR SPESIFIK, bukan daftar "siapa aja reachable".
 - [ ] Cross-Region Explorer — BELUM dibangun
 
 ### Rate Limiting — mitigasi OWASP API4:2023 (Unrestricted Resource Consumption)
 - [x] 4 limiter bernama: `auth` (5/menit/IP), `graph` (guest 10/menit/IP, authenticated 30/menit/user), `search` (30/menit), `api` default (guest 20/menit, authenticated 60/menit)
 - [x] Angka disimpan terpusat di `config/rate_limits.php`, didaftarkan di `AppServiceProvider::boot()` — satu sumber kebenaran, tidak hardcode di provider
-- [x] Terpasang di route: `throttle:search` di Entity Search, `throttle:graph` di Explore Network, `throttle:api` di sisanya
+- [x] Terpasang di route: `throttle:search` di Entity Search, `throttle:graph` di Explore Network + Find Connection, `throttle:api` di sisanya
 - [x] Test `RateLimitingTest.php` (2 test): buktikan 429 setelah lewat batas authenticated (30/menit), dan request ke-30 (masih dalam batas) tetap lolos
 - **CATATAN ARSITEKTUR PENTING:** cabang `guest_per_minute` di limiter `graph` & `api` UNREACHABLE saat ini — semua route ada di dalam grup `auth:sanctum`, jadi request tanpa token sudah ditolak 401 SEBELUM sempat kena throttle. Limiter `auth` (5/menit, buat login) JUGA belum terpasang ke route manapun karena belum ada endpoint login sama sekali (lihat "BELUM DIMULAI" — User/Profile Management API). Cabang guest & limiter `auth` baru "hidup" begitu ada mekanisme akses publik/login beneran.
 
@@ -95,7 +101,7 @@ Referensi wajib: CONVENTIONS.md, DECISIONS.md (satu folder ini)
 
 **Kontrak penting yang perlu diingat backend:**
 - Data flow: PostgreSQL → Laravel Graph API → scoped graph DTO → Graphology → Sigma.js/WebGL
-- Backend Graph API (yang sudah kita bangun, `/api/entities/{id}/network`) SENGAJA balikin format generic (array entities + array relationships) — BUKAN format spesifik Cytoscape/Sigma. Biarkan begitu, transformasi ke format Graphology itu tanggung jawab frontend, BUKAN backend.
+- Backend Graph API (Explore Network DAN Find Connection) SENGAJA balikin format generic (array entities + array relationships) — BUKAN format spesifik Cytoscape/Sigma. Biarkan begitu, transformasi ke format Graphology itu tanggung jawab frontend, BUKAN backend.
 - Target hero graph di frontend cuma 10-30 node — konsisten sama filosofi hard-cap 4 hop kita (D1).
 - Sigma implementation frontend disembunyikan di balik adapter/hooks layer — kalau backend Graph API berubah shape response-nya, dampaknya idealnya cuma nyentuh 1 lapis adapter itu, bukan semua halaman.
 
@@ -123,21 +129,22 @@ Referensi wajib: CONVENTIONS.md, DECISIONS.md (satu folder ini)
 
 10. **Rate limiter yang taruh cabang "guest" (`$request->user() ? ... : ...`) di dalam route yang sudah dibungkus `auth:sanctum` itu KODE MATI.** `auth:sanctum` selalu jalan duluan dan nolak request tanpa token dengan 401 sebelum sempat nyampe ke limiter — cabang guest baru reachable kalau ada route yang genuinely public (di luar `auth:sanctum`). Ketahuan pas riset test rate limiting, bukan lewat asumsi.
 
+11. **Kolom array PostgreSQL (`uuid[]`, dst) yang dibalikin lewat `DB::select()`/`DB::selectOne()` (query mentah) itu balik sebagai STRING literal PostgreSQL** (contoh: `"{uuid1,uuid2,uuid3}"`), **BUKAN array PHP native.** Ini beda dari Eloquent yang auto-cast kolom array. WAJIB parse manual (`trim($str, '{}')` lalu `explode(',', ...)`) sebelum dipakai sebagai array PHP — kalau lupa, `foreach`/`in_array` akan error atau salah hasil secara diam-diam.
+
 ---
 
 ## KEPUTUSAN DI DECISIONS.md (RINGKAS)
 
-D1 hop-limit graph (4 hop, Explore Network SELESAI, Find Connection & Cross-Region Explorer belum) · D2 pg_trgm search · D3 Event+Redis · D4 AI retrieval-then-generate · D5 entity resolution threshold · D6 bitemporal attributes · D7 legal review gate (SELESAI, entity+relationship) · D8 UUID v7 · D9 PWA · D10 shared DB + RLS · D11 Sanctum · D12 RBAC teams mode · D13 koneksi app wajib non-superuser (KRUSIAL) · D14 frontend graph stack cross-reference (Sigma.js+Graphology locked, lihat CONVENTIONS/DECISIONS lengkap)
+D1 hop-limit graph (4 hop, Explore Network + Find Connection SELESAI, Cross-Region Explorer belum) · D2 pg_trgm search · D3 Event+Redis · D4 AI retrieval-then-generate · D5 entity resolution threshold · D6 bitemporal attributes · D7 legal review gate (SELESAI, entity+relationship) · D8 UUID v7 · D9 PWA · D10 shared DB + RLS · D11 Sanctum · D12 RBAC teams mode · D13 koneksi app wajib non-superuser (KRUSIAL) · D14 frontend graph stack cross-reference (Sigma.js+Graphology locked, lihat CONVENTIONS/DECISIONS lengkap)
 
 ---
 
 ## BELUM DIMULAI
 
-- [ ] Find Connection API (D1) — jalur terpendek antar 2 entity spesifik (SEDANG DIKERJAKAN SEKARANG)
-- [ ] Cross-Region Explorer (D1)
+- [ ] Cross-Region Explorer (D1) — fitur graph terakhir yang belum digarap
+- [ ] User/Profile Management API (registrasi, login, ganti password, kelola anggota tim per tenant) — belum tersentuh sama sekali. Blocker buat limiter `auth` dan cabang guest limiter lain jadi reachable. Prioritas makin mendesak — 2 fitur besar (Rate Limiting, Find Connection) numpuk kebutuhan ini tanpa terselesaikan.
 - [ ] Dispute Submission — jalur publik formal buat pihak luar ngajuin keberatan/koreksi resmi (sekarang transisi published→needs_revision masih manual, LEGAL_REVIEWER harus tau dari luar sistem)
 - [ ] Audit Trail lengkap (E35) — sengaja ditunda, cuma ada minimal reviewed_by/reviewed_at sekarang
-- [ ] User/Profile Management API (registrasi, login, ganti password, kelola anggota tim per tenant) — belum tersentuh sama sekali. Ini juga blocker buat limiter `auth` dan cabang guest di limiter lain jadi reachable.
 - [ ] DDoS protection & hardening infrastruktur (Cloudflare/Deflect) — level infrastruktur, sebelum go-live
 - [ ] PostgreSQL Row-Level Security untuk tabel `roles`/`model_has_roles`/dst (Spatie tables) — belum dievaluasi apakah perlu
 
@@ -158,4 +165,4 @@ D1 hop-limit graph (4 hop, Explore Network SELESAI, Find Connection & Cross-Regi
 | 2026-08-12 | File dibuat. Progress s/d Sanctum install lengkap dicatat. |
 | 2026-08-13 | RBAC (D12), E08 Middleware, RLS (D10) selesai + bug kritis D13 ditemukan&diperbaiki, Entity Search+Detail API. |
 | 2026-08-14 | Update besar: Entity Create/Update/Review, Relationship Create/Update/Review (legal review gate D7 lengkap 2 sisi), Graph Traversal Explore Network (D1) selesai. Insiden file sampah ke-commit (sudah bersih). Frontend blueprint v1.3 diketahui: Sigma.js+Graphology locked. 64/64 test passed. Sesi ditutup, resume lengkap disusun buat sesi berikutnya (dokumen ini + CONVENTIONS.md + DECISIONS.md diupdate). |
-| 2026-08-15 | Sesi 3: Rate Limiting selesai (4 limiter, OWASP API4:2023) + test khusus (66/66 total). Temuan arsitektur: cabang guest limiter unreachable sampai ada login/akses publik. Commit 53d7504. Lanjut ke Find Connection API (D1). |
+| 2026-08-15 | Sesi 3: Rate Limiting selesai (4 limiter, OWASP API4:2023) + Find Connection API (D1) selesai (73/73 test). Temuan arsitektur: cabang guest limiter unreachable, array PostgreSQL wajib parse manual. Commit c44085b. User/Profile Management API makin mendesak jadi prioritas berikutnya. |
