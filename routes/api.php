@@ -12,21 +12,27 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Modules\Graph\Controllers\NetworkExploreController;
 use App\Modules\Graph\Controllers\FindConnectionController;
+use App\Modules\TenantRegion\Controllers\AuthController;
+use App\Modules\TenantRegion\Controllers\InviteController;
+
+// Publik — belum login
+Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:auth');
+Route::post('/invites/{token}/accept', [InviteController::class, 'accept'])->middleware('throttle:auth');
 
 Route::get('/user', function (Request $request) {
     return $request->user();
 })->middleware(['auth:sanctum', 'throttle:api']);
 
+Route::post('/logout', [AuthController::class, 'logout'])->middleware(['auth:sanctum', 'throttle:api']);
+
 Route::middleware(['auth:sanctum', 'tenant.context'])->group(function () {
 
-    // Endpoint pencarian — rawan scraping/enumeration, limiter khusus
     Route::get('/entities/search', [EntitySearchController::class, 'search'])
         ->middleware('throttle:search');
 
     Route::get('/entities/{id}', [EntityDetailController::class, 'show'])
         ->middleware('throttle:api');
 
-    // Graph traversal — query paling berat, limiter paling ketat
     Route::get('/entities/{id}/network', [NetworkExploreController::class, 'explore'])
         ->middleware('throttle:graph');
 
@@ -47,5 +53,16 @@ Route::middleware(['auth:sanctum', 'tenant.context'])->group(function () {
         Route::patch('/entities/{id}/request-revision', [EntityReviewController::class, 'requestRevision']);
         Route::patch('/relationships/{id}/publish', [RelationshipReviewController::class, 'publish']);
         Route::patch('/relationships/{id}/request-revision', [RelationshipReviewController::class, 'requestRevision']);
+    });
+
+    // Invite — TENANT_ADMIN bisa bikin (masuk pending_approval), SUPER_ADMIN bisa langsung approved
+    Route::middleware(['role:TENANT_ADMIN|SUPER_ADMIN', 'throttle:api'])->group(function () {
+        Route::post('/invites', [InviteController::class, 'store']);
+    });
+
+    // Approve/reject invite — CUMA SUPER_ADMIN (maker-checker / four-eyes principle)
+    Route::middleware(['role:SUPER_ADMIN', 'throttle:api'])->group(function () {
+        Route::patch('/invites/{id}/approve', [InviteController::class, 'approve']);
+        Route::patch('/invites/{id}/reject', [InviteController::class, 'reject']);
     });
 });
