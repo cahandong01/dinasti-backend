@@ -11,6 +11,7 @@ use App\Modules\Relationship\Controllers\RelationshipUpdateController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Modules\Graph\Controllers\NetworkExploreController;
+use App\Modules\Graph\Controllers\FindConnectionController;
 
 Route::get('/user', function (Request $request) {
     return $request->user();
@@ -27,6 +28,9 @@ Route::middleware(['auth:sanctum', 'tenant.context'])->group(function () {
 
     // Graph traversal — query paling berat, limiter paling ketat
     Route::get('/entities/{id}/network', [NetworkExploreController::class, 'explore'])
+        ->middleware('throttle:graph');
+
+    Route::get('/entities/{id}/find-connection', [FindConnectionController::class, 'find'])
         ->middleware('throttle:graph');
 
     Route::middleware(['role:RESEARCHER|TENANT_ADMIN|SUPER_ADMIN', 'throttle:api'])->group(function () {
