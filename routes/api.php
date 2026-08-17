@@ -15,7 +15,6 @@ use App\Modules\Graph\Controllers\FindConnectionController;
 use App\Modules\TenantRegion\Controllers\AuthController;
 use App\Modules\TenantRegion\Controllers\InviteController;
 
-// Publik — belum login
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:auth');
 Route::post('/invites/{token}/accept', [InviteController::class, 'accept'])->middleware('throttle:auth');
 
@@ -39,7 +38,7 @@ Route::middleware(['auth:sanctum', 'tenant.context'])->group(function () {
     Route::get('/entities/{id}/find-connection', [FindConnectionController::class, 'find'])
         ->middleware('throttle:graph');
 
-    Route::middleware(['role:RESEARCHER|TENANT_ADMIN|SUPER_ADMIN', 'throttle:api'])->group(function () {
+    Route::middleware(['has_role:RESEARCHER|TENANT_ADMIN|SUPER_ADMIN', 'throttle:api'])->group(function () {
         Route::post('/entities', [EntityCreateController::class, 'store']);
         Route::patch('/entities/{id}', [EntityUpdateController::class, 'update']);
         Route::patch('/entities/{id}/submit-for-review', [EntityReviewController::class, 'submitForReview']);
@@ -48,20 +47,18 @@ Route::middleware(['auth:sanctum', 'tenant.context'])->group(function () {
         Route::patch('/relationships/{id}/submit-for-review', [RelationshipReviewController::class, 'submitForReview']);
     });
 
-    Route::middleware(['role:LEGAL_REVIEWER|SUPER_ADMIN', 'throttle:api'])->group(function () {
+    Route::middleware(['has_role:LEGAL_REVIEWER|SUPER_ADMIN', 'throttle:api'])->group(function () {
         Route::patch('/entities/{id}/publish', [EntityReviewController::class, 'publish']);
         Route::patch('/entities/{id}/request-revision', [EntityReviewController::class, 'requestRevision']);
         Route::patch('/relationships/{id}/publish', [RelationshipReviewController::class, 'publish']);
         Route::patch('/relationships/{id}/request-revision', [RelationshipReviewController::class, 'requestRevision']);
     });
 
-    // Invite — TENANT_ADMIN bisa bikin (masuk pending_approval), SUPER_ADMIN bisa langsung approved
-    Route::middleware(['role:TENANT_ADMIN|SUPER_ADMIN', 'throttle:api'])->group(function () {
+    Route::middleware(['has_role:TENANT_ADMIN|SUPER_ADMIN', 'throttle:api'])->group(function () {
         Route::post('/invites', [InviteController::class, 'store']);
     });
 
-    // Approve/reject invite — CUMA SUPER_ADMIN (maker-checker / four-eyes principle)
-    Route::middleware(['role:SUPER_ADMIN', 'throttle:api'])->group(function () {
+    Route::middleware(['has_role:SUPER_ADMIN', 'throttle:api'])->group(function () {
         Route::patch('/invites/{id}/approve', [InviteController::class, 'approve']);
         Route::patch('/invites/{id}/reject', [InviteController::class, 'reject']);
     });

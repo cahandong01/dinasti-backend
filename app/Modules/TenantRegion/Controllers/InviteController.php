@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Modules\TenantRegion\Requests\AcceptInviteRequest;
 use App\Modules\TenantRegion\Requests\CreateInviteRequest;
 use App\Modules\TenantRegion\Services\InviteService;
+use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 
 class InviteController extends Controller
@@ -17,22 +18,16 @@ class InviteController extends Controller
     public function store(CreateInviteRequest $request)
     {
         $tenantId = $request->header('X-Tenant-ID');
-        $inviterIsSuperAdmin = $request->user()->hasRole('SUPER_ADMIN');
 
         $invite = $this->inviteService->create(
             $tenantId,
             $request->validated('email'),
             $request->validated('role'),
-            $request->user()->id,
-            $inviterIsSuperAdmin
+            $request->user()->id
         );
 
-        $message = $inviterIsSuperAdmin
-            ? 'Undangan dibuat dan langsung aktif. Kirim link ini ke penerima secara manual.'
-            : 'Undangan dibuat, TAPI masih menunggu approval SUPER_ADMIN sebelum bisa dipakai.';
-
         return response()->json([
-            'message' => $message,
+            'message' => 'Undangan dibuat, menunggu approval SUPER_ADMIN lain (bukan situ sendiri) sebelum bisa dipakai.',
             'invite_id' => $invite->id,
             'invite_token' => $invite->token,
             'status' => $invite->status,
@@ -40,7 +35,7 @@ class InviteController extends Controller
         ], 201);
     }
 
-    public function approve(string $id, \Illuminate\Http\Request $request)
+    public function approve(string $id, Request $request)
     {
         try {
             $invite = $this->inviteService->approve($id, $request->user()->id);
@@ -51,7 +46,7 @@ class InviteController extends Controller
         return response()->json(['message' => 'Undangan disetujui.', 'status' => $invite->status]);
     }
 
-    public function reject(string $id, \Illuminate\Http\Request $request)
+    public function reject(string $id, Request $request)
     {
         try {
             $invite = $this->inviteService->reject($id, $request->user()->id);

@@ -9,7 +9,7 @@ class CreateInviteRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true; // Otorisasi role sudah ditangani middleware 'role:...' di route
+        return true; // Otorisasi role sudah ditangani middleware 'has_role:...' di route
     }
 
     public function rules(): array
@@ -22,14 +22,17 @@ class CreateInviteRequest extends FormRequest
 
     /**
      * Role hierarchy constraint: TENANT_ADMIN TIDAK BOLEH undang orang
-     * jadi TENANT_ADMIN (role setara) — cegah "admin bayangan" tanpa
-     * sepengetahuan SUPER_ADMIN. Cuma SUPER_ADMIN yang boleh assign
-     * role TENANT_ADMIN.
+     * jadi TENANT_ADMIN. Query manual (bukan hasRole()) karena
+     * hasRole() bawaan Spatie punya bug tidak include role global
+     * saat team scope aktif (lihat HasRole.php middleware).
      */
     public function withValidator(Validator $validator): void
     {
         $validator->after(function (Validator $validator) {
-            $inviterIsSuperAdmin = $this->user()->hasRole('SUPER_ADMIN');
+            $inviterIsSuperAdmin = $this->user()->roles()
+                ->whereNull('roles.tenant_id')
+                ->where('roles.name', 'SUPER_ADMIN')
+                ->exists();
 
             if ($this->input('role') === 'TENANT_ADMIN' && ! $inviterIsSuperAdmin) {
                 $validator->errors()->add(
