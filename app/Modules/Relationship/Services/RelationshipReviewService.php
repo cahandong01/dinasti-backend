@@ -52,6 +52,11 @@ class RelationshipReviewService
             $relationship->reviewed_at = now();
         }
 
+        // first_published_at WAJIB cuma keisi SEKALI (publikasi PERTAMA).
+        if ($statusTujuan === 'published' && $relationship->first_published_at === null) {
+            $relationship->first_published_at = now();
+        }
+
         $relationship->save();
 
         return $relationship->refresh();

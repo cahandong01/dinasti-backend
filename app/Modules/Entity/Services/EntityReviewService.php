@@ -55,6 +55,13 @@ class EntityReviewService
             $entity->reviewed_at = now();
         }
 
+        // first_published_at WAJIB cuma keisi SEKALI (publikasi PERTAMA),
+        // beda dari reviewed_at yang ke-overwrite tiap transisi. Dipakai
+        // buat validasi batas waktu 2 bulan pengajuan Hak Jawab.
+        if ($statusTujuan === 'published' && $entity->first_published_at === null) {
+            $entity->first_published_at = now();
+        }
+
         $entity->save();
 
         return $entity->refresh();

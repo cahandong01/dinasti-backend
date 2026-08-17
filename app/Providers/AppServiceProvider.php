@@ -23,6 +23,12 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->registerRateLimiters();
+        $this->registerRateLimiters();
+
+        \Illuminate\Database\Eloquent\Relations\Relation::morphMap([
+            'entity' => \App\Modules\Entity\Models\Entity::class,
+            'relationship' => \App\Modules\Relationship\Models\Relationship::class,
+        ]);
     }
 
     /**
