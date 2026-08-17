@@ -36,14 +36,29 @@ class TenantContext
 
         $user = $request->user();
 
-        // Validasi: user beneran punya role di tenant ini, bukan cuma
-        // percaya klaim header mentah-mentah.
         setPermissionsTeamId($tenant->id);
         $user->unsetRelation('roles')->unsetRelation('permissions');
 
-        $isSuperAdmin = $user->roles()->whereNull('roles.tenant_id')->where('roles.name', 'SUPER_ADMIN')->exists();
+        // FIX (sesi 3, dibuktikan lewat Tinker): $user->roles() TIDAK
+        // BISA dipakai buat cek role global (tenant_id NULL) — Spatie
+        // diam-diam nyuntik filter model_has_roles.tenant_id = current
+        // team di level relasi, ke-AND SEBELUM kondisi whereNull kita.
+        // Query LANGSUNG ke pivot table, bypass total dari relasi itu.
+        $isSuperAdmin = DB::table('model_has_roles')
+            ->join('roles', 'roles.id', '=', 'model_has_roles.role_id')
+            ->where('model_has_roles.model_id', $user->id)
+            ->whereNull('model_has_roles.tenant_id')
+            ->where('roles.name', 'SUPER_ADMIN')
+            ->exists();
 
-        if (! $isSuperAdmin && $user->roles()->count() === 0) {
+        $punyaRoleDiTenantIni = DB::table('model_has_roles')
+            ->where('model_id', $user->id)
+            ->where(function ($query) use ($tenant) {
+                $query->whereNull('tenant_id')->orWhere('tenant_id', $tenant->id);
+            })
+            ->exists();
+
+        if (! $isSuperAdmin && ! $punyaRoleDiTenantIni) {
             return response()->json([
                 'message' => 'Anda tidak punya akses ke tenant ini.',
             ], 403);
@@ -52,7 +67,6 @@ class TenantContext
         // Lapis tambahan buat RLS PostgreSQL (D10) — bahkan kalau ada bug
         // query yang lupa filter tenant_id, database tetap menolak.
         DB::statement("SET app.current_tenant = '{$tenant->id}'");
-
         $request->attributes->set('current_tenant', $tenant);
 
         return $next($request);
