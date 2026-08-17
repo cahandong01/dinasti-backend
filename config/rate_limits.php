@@ -18,6 +18,11 @@ return [
         'per_minute' => 5,
     ],
 
+    // Dispute Submission — publik tanpa login, rawan spam
+    'dispute' => [
+        'per_minute' => 5,
+    ],
+
     // Graph traversal (Explore Network, Find Connection) — query paling berat
     'graph' => [
         'guest_per_minute' => 10,

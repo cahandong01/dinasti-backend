@@ -23,8 +23,7 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->registerRateLimiters();
-        $this->registerRateLimiters();
-
+        
         \Illuminate\Database\Eloquent\Relations\Relation::morphMap([
             'entity' => \App\Modules\Entity\Models\Entity::class,
             'relationship' => \App\Modules\Relationship\Models\Relationship::class,
@@ -54,6 +53,11 @@ class AppServiceProvider extends ServiceProvider
         });
 
         // Entity search (fuzzy pg_trgm)
+        RateLimiter::for('dispute', function (Request $request) {
+            return Limit::perMinute(config('rate_limits.dispute.per_minute'))
+                ->by($request->ip());
+        });
+
         RateLimiter::for('search', function (Request $request) {
             return Limit::perMinute(config('rate_limits.search.per_minute'))
                 ->by($request->user()?->id ?: $request->ip());

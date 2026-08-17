@@ -20,11 +20,13 @@ class Relationship extends Model
         'valid_from',
         'valid_until',
         'status',
+        'first_published_at',
     ];
 
-    protected $casts = [
+        protected $casts = [
         'valid_from' => 'date',
         'valid_until' => 'date',
+        'first_published_at' => 'datetime',
     ];
 
     protected static function booted(): void

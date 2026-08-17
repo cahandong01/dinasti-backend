@@ -20,6 +20,11 @@ class Entity extends Model
         'type',
         'name',
         'status',
+                'first_published_at',
+    ];
+
+    protected $casts = [
+        'first_published_at' => 'datetime',
     ];
 
     public function tenant(): BelongsTo
