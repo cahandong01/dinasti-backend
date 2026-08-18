@@ -11,7 +11,7 @@ class EntityDetailService
      * tiap atribut/relationship, dan relationship dua arah (source & target).
      * Isolasi tenant otomatis ditangani RLS (D10) — tidak perlu filter manual.
      */
-    public function getDetail(string $entityId): ?Entity
+        public function getDetail(string $slug): ?Entity
     {
         return Entity::with([
             'attributes.evidence.source',
@@ -19,6 +19,6 @@ class EntityDetailService
             'relationshipsAsSource.targetEntity',
             'relationshipsAsTarget.evidence.source',
             'relationshipsAsTarget.sourceEntity',
-        ])->find($entityId);
+        ])->where('slug', $slug)->first();
     }
 }

@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Str;
 
 class Entity extends Model
 {
@@ -20,12 +21,43 @@ class Entity extends Model
         'type',
         'name',
         'status',
-                'first_published_at',
+        'first_published_at',
+        'slug',
     ];
 
     protected $casts = [
         'first_published_at' => 'datetime',
     ];
+
+    /**
+     * Slug (API_CONTRACT.md Keputusan #1) di-generate otomatis dari
+     * nama kalau tidak dikirim eksplisit — satu tempat, konsisten,
+     * dipakai baik dari EntityCreateController maupun seeder/tinker.
+     * Unik GLOBAL (bukan per-tenant), karena endpoint detail publik.
+     */
+    protected static function booted(): void
+    {
+        static::creating(function (Entity $entity) {
+            if (empty($entity->slug)) {
+                $entity->slug = self::generateUniqueSlug($entity->name);
+            }
+        });
+    }
+
+    private static function generateUniqueSlug(string $name): string
+    {
+        $baseSlug = Str::slug($name);
+        $baseSlug = $baseSlug !== '' ? $baseSlug : 'entitas';
+        $slug = $baseSlug;
+        $counter = 2;
+
+        while (self::where('slug', $slug)->exists()) {
+            $slug = $baseSlug.'-'.$counter;
+            $counter++;
+        }
+
+        return $slug;
+    }
 
     public function tenant(): BelongsTo
     {

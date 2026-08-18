@@ -31,7 +31,7 @@ Route::middleware(['auth:sanctum', 'tenant.context'])->group(function () {
     Route::get('/entities/search', [EntitySearchController::class, 'search'])
         ->middleware('throttle:search');
 
-    Route::get('/entities/{id}', [EntityDetailController::class, 'show'])
+        Route::get('/entities/{slug}', [EntityDetailController::class, 'show'])
         ->middleware('throttle:api');
 
     Route::get('/entities/{id}/network', [NetworkExploreController::class, 'explore'])

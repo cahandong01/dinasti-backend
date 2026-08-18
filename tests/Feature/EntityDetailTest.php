@@ -42,7 +42,7 @@ test('detail entity lengkap dengan atribut dan evidence-nya', function () {
         'valid_from' => '2020-01-01',
     ]);
 
-    $response = $this->getJson("/api/entities/{$entity->id}", ['X-Tenant-ID' => $tenant->id]);
+        $response = $this->getJson("/api/entities/{$entity->slug}", ['X-Tenant-ID' => $tenant->id]);
 
     $response->assertStatus(200);
     $response->assertJsonPath('name', 'Ratu Atut Chosiyah');
@@ -67,11 +67,11 @@ test('detail entity menampilkan relationship dua arah (sebagai source maupun tar
     ]);
 
     // Dilihat dari sisi "orang" (source)
-    $responseOrang = $this->getJson("/api/entities/{$orang->id}", ['X-Tenant-ID' => $tenant->id]);
+        $responseOrang = $this->getJson("/api/entities/{$orang->slug}", ['X-Tenant-ID' => $tenant->id]);
     $responseOrang->assertJsonPath('relationships_as_source.0.target_entity.name', 'PT Sejahtera');
 
     // Dilihat dari sisi "perusahaan" (target) — relationship yang sama harus tetap kelihatan dari arah sebaliknya
-    $responseUsaha = $this->getJson("/api/entities/{$perusahaan->id}", ['X-Tenant-ID' => $tenant->id]);
+    $responseUsaha = $this->getJson("/api/entities/{$perusahaan->slug}", ['X-Tenant-ID' => $tenant->id]);
     $responseUsaha->assertJsonPath('relationships_as_target.0.source_entity.name', 'Budi Santoso');
 });
 
@@ -101,7 +101,7 @@ test('entity milik tenant lain dibalas 404, bukan bocor lewat detail API (RLS)',
     setPermissionsTeamId($tenantA->id);
     $userA->assignRole('RESEARCHER');
 
-    $response = $this->getJson("/api/entities/{$entityRahasia->id}", ['X-Tenant-ID' => $tenantA->id]);
+        $response = $this->getJson("/api/entities/{$entityRahasia->slug}", ['X-Tenant-ID' => $tenantA->id]);
 
     $response->assertStatus(404);
 });

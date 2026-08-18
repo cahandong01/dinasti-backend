@@ -11,9 +11,9 @@ class EntityDetailController extends Controller
         private readonly EntityDetailService $entityDetailService
     ) {}
 
-    public function show(string $id)
+        public function show(string $slug)
     {
-        $entity = $this->entityDetailService->getDetail($id);
+        $entity = $this->entityDetailService->getDetail($slug);
 
         if (! $entity) {
             return response()->json([
