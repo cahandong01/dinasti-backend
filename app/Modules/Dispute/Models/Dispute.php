@@ -14,24 +14,31 @@ class Dispute extends Model
     public const STATUS_RESOLVED_ACCEPTED = 'resolved_accepted';
     public const STATUS_RESOLVED_REJECTED = 'resolved_rejected';
 
-    protected $fillable = [
+        protected $fillable = [
         'tenant_id',
         'disputable_type',
         'disputable_id',
+        'type',
+        'tracking_token',
         'name',
         'email',
         'phone',
         'disputed_part',
         'supporting_evidence',
         'response_content',
+        'is_self_reported',
         'status',
         'resolved_by',
         'resolved_at',
         'resolution_note',
     ];
 
+    public const TYPE_HAK_JAWAB = 'hak_jawab';
+    public const TYPE_KOREKSI = 'koreksi';
+
     protected $casts = [
         'resolved_at' => 'datetime',
+        'is_self_reported' => 'boolean',
     ];
 
     public function disputable(): MorphTo

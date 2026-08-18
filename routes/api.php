@@ -19,6 +19,7 @@ use App\Modules\Dispute\Controllers\DisputeController;
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:auth');
 Route::post('/invites/{token}/accept', [InviteController::class, 'accept'])->middleware('throttle:auth');
 Route::post('/disputes', [DisputeController::class, 'store'])->middleware('throttle:dispute');
+Route::get('/disputes/status/{token}', [DisputeController::class, 'status'])->middleware('throttle:dispute');
 
 Route::get('/user', function (Request $request) {
     return $request->user();

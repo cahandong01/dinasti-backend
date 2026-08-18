@@ -9,6 +9,7 @@ use App\Modules\Entity\Services\EntityReviewService;
 use App\Modules\Relationship\Models\Relationship;
 use App\Modules\Relationship\Services\RelationshipReviewService;
 use Illuminate\Database\Eloquent\Relations\Relation;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class DisputeService
@@ -18,6 +19,8 @@ class DisputeService
      * 2 bulan sejak publikasi, kecuali disepakati lain para pihak.
      * Dihitung dari first_published_at (publikasi PERTAMA), bukan
      * reviewed_at yang bisa ke-overwrite kalau direvisi berkali-kali.
+     * HANYA berlaku untuk type hak_jawab (API_CONTRACT.md Keputusan #3)
+     * -- koreksi tidak ada batas waktu.
      */
     private const BATAS_WAKTU_BULAN = 2;
 
@@ -27,6 +30,7 @@ class DisputeService
     ) {}
 
     public function create(
+        string $type,
         string $disputableType,
         string $disputableId,
         string $name,
@@ -35,6 +39,7 @@ class DisputeService
         ?string $disputedPart,
         string $supportingEvidence,
         string $responseContent,
+        bool $isSelfReported,
     ): Dispute {
         $disputable = $this->resolveDisputable($disputableType, $disputableId);
 
@@ -44,16 +49,18 @@ class DisputeService
             ]);
         }
 
-        if (
-            $disputable->first_published_at === null
-            || $disputable->first_published_at->lt(now()->subMonths(self::BATAS_WAKTU_BULAN))
-        ) {
-            throw ValidationException::withMessages([
-                'disputable_id' => 'Batas waktu pengajuan Hak Jawab (2 bulan sejak publikasi) sudah lewat.',
-            ]);
+        if ($type === Dispute::TYPE_HAK_JAWAB) {
+            if (
+                $disputable->first_published_at === null
+                || $disputable->first_published_at->lt(now()->subMonths(self::BATAS_WAKTU_BULAN))
+            ) {
+                throw ValidationException::withMessages([
+                    'disputable_id' => 'Batas waktu pengajuan Hak Jawab (2 bulan sejak publikasi) sudah lewat.',
+                ]);
+            }
         }
 
-                // TANPA ->refresh() di sini (beda dari pola create() Entity/
+        // TANPA ->refresh() di sini (beda dari pola create() Entity/
         // Relationship) — endpoint ini PUBLIK, app.current_tenant
         // tidak ter-set, jadi refresh() (query SELECT ulang) akan
         // ditolak RLS dan bikin ModelNotFoundException -> 404 palsu.
@@ -63,14 +70,26 @@ class DisputeService
             'tenant_id' => $disputable->tenant_id,
             'disputable_type' => $disputableType,
             'disputable_id' => $disputable->id,
+            'type' => $type,
+            'tracking_token' => Str::random(40),
             'name' => $name,
             'email' => $email,
             'phone' => $phone,
             'disputed_part' => $disputedPart,
             'supporting_evidence' => $supportingEvidence,
             'response_content' => $responseContent,
+            'is_self_reported' => $isSelfReported,
             'status' => Dispute::STATUS_PENDING,
         ]);
+    }
+
+    /**
+     * Cek status pengajuan secara PUBLIK — cukup modal tracking_token
+     * (API_CONTRACT.md Keputusan #2), bukan email (hindari PII di URL).
+     */
+    public function findByTrackingToken(string $token): ?Dispute
+    {
+        return Dispute::where('tracking_token', $token)->first();
     }
 
     public function approve(string $disputeId, User $resolver, ?string $note): Dispute

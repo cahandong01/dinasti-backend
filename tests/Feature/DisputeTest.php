@@ -40,6 +40,7 @@ function loginSebagaiLegalReviewerUntukDispute(string $tenantId): User
 }
 
 $dataDisputeValid = fn (string $entityId) => [
+    'type' => 'hak_jawab',
     'disputable_type' => 'entity',
     'disputable_id' => $entityId,
     'name' => 'Budi Pelapor',
@@ -48,6 +49,7 @@ $dataDisputeValid = fn (string $entityId) => [
     'disputed_part' => 'Bagian jabatan',
     'supporting_evidence' => 'Surat keterangan resmi dari instansi X.',
     'response_content' => 'Data jabatan yang tercantum sudah tidak berlaku sejak tahun lalu.',
+    'is_self_reported' => true,
 ];
 
 test('publik bisa ajukan dispute TANPA login ke entity published', function () use ($dataDisputeValid) {
@@ -95,6 +97,29 @@ test('dispute ditolak kalau sudah lewat 2 bulan sejak first_published_at', funct
     $response = $this->postJson('/api/disputes', $dataDisputeValid($entity->id));
 
     $response->assertStatus(422);
+});
+
+test('koreksi TIDAK terikat batas 2 bulan (beda dari hak_jawab)', function () use ($dataDisputeValid) {
+    $tenant = Tenant::create(['name' => 'Tenant A', 'slug' => 'tenant-a']);
+    DB::statement("SET app.current_tenant = '{$tenant->id}'");
+    $region = Region::create(['name' => 'Banten', 'code' => 'ID-BT', 'level' => 'province']);
+    $entity = Entity::create([
+        'tenant_id' => $tenant->id,
+        'region_id' => $region->id,
+        'type' => 'person',
+        'name' => 'Budi Lama Sekali',
+        'status' => 'published',
+        'first_published_at' => now()->subMonths(6), // jauh lebih dari 2 bulan
+    ]);
+    DB::statement("RESET app.current_tenant");
+
+    $payload = $dataDisputeValid($entity->id);
+    $payload['type'] = 'koreksi';
+
+    $response = $this->postJson('/api/disputes', $payload);
+
+    $response->assertStatus(201); // TETAP diterima, beda dari hak_jawab
+    $response->assertJsonPath('type', 'koreksi');
 });
 
 test('supporting_evidence dan response_content WAJIB diisi', function () {
