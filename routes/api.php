@@ -22,6 +22,7 @@ Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:au
 Route::post('/invites/{token}/accept', [InviteController::class, 'accept'])->middleware('throttle:auth');
 Route::post('/disputes', [DisputeController::class, 'store'])->middleware('throttle:dispute');
 Route::get('/disputes/status/{token}', [DisputeController::class, 'status'])->middleware('throttle:dispute');
+Route::get('/entities/{id}/disputes', [DisputeController::class, 'historyForEntity'])->middleware('throttle:api');
 
 Route::get('/user', function (Request $request) {
     return $request->user();

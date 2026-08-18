@@ -76,7 +76,7 @@ class DisputeController extends Controller
         return response()->json(['message' => 'Dispute disetujui.', 'status' => $dispute->status]);
     }
 
-    public function reject(string $id, ResolveDisputeRequest $request)
+        public function reject(string $id, ResolveDisputeRequest $request)
     {
         try {
             $dispute = $this->disputeService->reject($id, $request->user(), $request->validated('note'));
@@ -85,5 +85,15 @@ class DisputeController extends Controller
         }
 
         return response()->json(['message' => 'Dispute ditolak.', 'status' => $dispute->status]);
+    }
+
+    /**
+     * Riwayat dispute per-entity, PUBLIK (API_CONTRACT.md Keputusan #7).
+     */
+    public function historyForEntity(string $entityId)
+    {
+        return response()->json([
+            'data' => $this->disputeService->getPublicHistoryForDisputable('entity', $entityId),
+        ]);
     }
 }

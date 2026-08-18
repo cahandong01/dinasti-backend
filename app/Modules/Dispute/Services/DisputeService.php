@@ -9,6 +9,7 @@ use App\Modules\Entity\Services\EntityReviewService;
 use App\Modules\Relationship\Models\Relationship;
 use App\Modules\Relationship\Services\RelationshipReviewService;
 use Illuminate\Database\Eloquent\Relations\Relation;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -83,13 +84,30 @@ class DisputeService
         ]);
     }
 
-    /**
+        /**
      * Cek status pengajuan secara PUBLIK — cukup modal tracking_token
      * (API_CONTRACT.md Keputusan #2), bukan email (hindari PII di URL).
      */
     public function findByTrackingToken(string $token): ?Dispute
     {
         return Dispute::where('tracking_token', $token)->first();
+    }
+
+    /**
+     * Riwayat dispute per-entity, PUBLIK (API_CONTRACT.md Keputusan #7).
+     * WAJIB query VIEW entity_disputes_public (bukan model Dispute
+     * langsung) — VIEW ini secara struktural TIDAK PUNYA kolom PII
+     * (name/email/phone/tracking_token/resolved_by/is_self_reported),
+     * jadi tidak mungkin bocor lewat method ini walau ada bug lain.
+     */
+    public function getPublicHistoryForDisputable(string $disputableType, string $disputableId): array
+    {
+        return DB::table('entity_disputes_public')
+            ->where('disputable_type', $disputableType)
+            ->where('disputable_id', $disputableId)
+            ->orderByDesc('resolved_at')
+            ->get()
+            ->toArray();
     }
 
     public function approve(string $disputeId, User $resolver, ?string $note): Dispute
