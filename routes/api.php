@@ -15,7 +15,9 @@ use App\Modules\Graph\Controllers\FindConnectionController;
 use App\Modules\TenantRegion\Controllers\AuthController;
 use App\Modules\TenantRegion\Controllers\InviteController;
 use App\Modules\Dispute\Controllers\DisputeController;
+use App\Modules\TenantRegion\Controllers\RegionController;
 
+Route::get('/regions', [RegionController::class, 'index'])->middleware('throttle:api');
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:auth');
 Route::post('/invites/{token}/accept', [InviteController::class, 'accept'])->middleware('throttle:auth');
 Route::post('/disputes', [DisputeController::class, 'store'])->middleware('throttle:dispute');
