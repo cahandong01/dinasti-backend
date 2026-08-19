@@ -1,160 +1,144 @@
 # PETA GURITA DINASTI — MASTER TRACKER
 Living document — resume lengkap progress project, diupdate Claude tiap numpuk progress besar.
 Root project backend: D:\dinasti\dinasti-backend
-Root project frontend: TERPISAH (repo lain, dibangun sesi Claude lain — lihat bagian FRONTEND)
-Referensi wajib: CONVENTIONS.md, DECISIONS.md (satu folder ini)
+Root project frontend: TERPISAH (repo lain, akun Claude lain — lihat bagian FRONTEND)
+Referensi wajib: CONVENTIONS.md, DECISIONS.md, **API_CONTRACT.md** (satu folder ini)
 
 ---
 
 ## GLOSARIUM SINGKAT
 
-- **Tenant** = pemilik/pengelola ruang data (contoh: "Research Tenant Banten"). Data antar tenant terisolasi.
-- **Region** = wilayah geografis yang dibahas (Banten, dst). Terpisah dari tenant — satu tenant bisa riset banyak region.
-- **RLS** = Row-Level Security, lapis pengaman di level PostgreSQL sendiri, nolak baris data yang bukan milik tenant aktif — bahkan kalau kode Laravel ada bug lupa filter.
-- **Legal Review Gate (D7)** = state machine draft→pending_review→published/needs_revision. Data yang menyentuh nama orang TIDAK BOLEH auto-publish.
-- **Maker-Checker** = pola dimana 1 orang bikin request (maker) dan HARUS orang LAIN yang approve (checker) — tidak ada aksi yang bisa auto-approve diri sendiri.
+- **Tenant** = pemilik/pengelola ruang data. Data antar tenant terisolasi.
+- **Region** = wilayah geografis, terpisah dari tenant, hierarkis (parent_id).
+- **RLS** = Row-Level Security, lapis pengaman di level PostgreSQL sendiri.
+- **Legal Review Gate (D7)** = state machine draft→pending_review→published/needs_revision.
+- **Maker-Checker** = 1 orang bikin request (maker), orang LAIN yang approve (checker).
+- **Hak Jawab** (UU Pers Pasal 1 ayat 11) = tanggapan/sanggahan pemberitaan yang merugikan nama baik PEMOHON SENDIRI, batas 2 bulan sejak publikasi.
+- **Hak Koreksi** (UU Pers Pasal 1 ayat 12) = koreksi kekeliruan informasi tentang diri sendiri MAUPUN orang lain, TANPA batas waktu.
 
 ---
 
-## STATUS RINGKAS (per 2026-08-17)
+## STATUS RINGKAS (per 2026-08-18)
 
 **Fase sekarang:** Phase 1 — MVP Foundation, mendekati selesai
 **Stack backend terkonfirmasi:** Laravel 13.24.0, PostgreSQL 18 lokal, Redis (Predis), Pest PHP
-**Total test:** 86/86 PASSED
-**Repo backend:** github.com/cahandong01/dinasti-backend (commit terakhir: 0a5fb1a)
-**Kredensial DB:** JANGAN pakai user `postgres` (superuser) — WAJIB `dinasti_app` (non-superuser). Lihat D13.
-**⚠️ WAJIB BACA sebelum kerja apapun soal role/permission:** Insiden #11 di bawah — `$user->roles()` TIDAK BISA dipercaya buat cek role lintas-tenant (termasuk SUPER_ADMIN).
+**Total test:** 102/102 PASSED
+**Repo backend:** github.com/cahandong01/dinasti-backend (commit terakhir: ce761b0)
+**Kredensial DB:** WAJIB `dinasti_app` (non-superuser), lihat D13.
+**⚠️ WAJIB BACA sebelum kerja apapun soal role/RLS/migration:** Insiden #11-#16 di bawah.
+**⚠️ WAJIB BACA sebelum kerja frontend-related apapun:** `API_CONTRACT.md` — dokumen kontrak FINAL yang disepakati bareng sesi frontend, 7 keputusan (slug routing, tracking_token, dispute type, upload file ditunda, status hukum ditunda, endpoint regions, riwayat dispute publik).
 
 ---
 
 ## SELESAI ✅
 
 ### Database — fondasi + tambahan
-- [x] 8 tabel inti: regions, tenants, tenant_region_access, entities, sources, evidences, entity_attributes, relationships (+ users, invites)
-- [x] Kolom `tenant_id` ditambah LANGSUNG ke entity_attributes & relationships (bukan cuma via entity_id) — demi performa RLS
-- [x] Kolom `reviewed_by`+`reviewed_at` di entities DAN relationships (minimal audit, BUKAN audit trail lengkap E35 — itu epic terpisah, sengaja ditunda)
-- [x] pg_trgm extension aktif + index GIN di entities.name (fuzzy search)
-- [x] btree_gist extension (buat constraint EXCLUDE USING gist di entity_attributes/relationships, cegah overlap periode bitemporal)
-- [x] Migration perbaikan: UUID morphs + `model_has_roles.tenant_id` dibikin nullable (WAJIB, biar role global kayak SUPER_ADMIN bisa punya pivot tenant_id NULL)
+- [x] 10 tabel inti: regions, tenants, tenant_region_access, entities, sources, evidences, entity_attributes, relationships, users, invites, disputes
+- [x] Kolom `slug` di entities — SEO-friendly URL, unique global, auto-generate dari nama (collision-safe, suffix angka)
+- [x] Kolom `first_published_at` di entities & relationships — cuma keisi SEKALI (publikasi pertama)
+- [x] disputes: kolom `type` (hak_jawab/koreksi), `tracking_token` (opaque, publik), `is_self_reported` (self-declared, BUKAN diverifikasi identitas)
+- [x] VIEW `entity_disputes_public` — proyeksi kolom non-PII dari disputes, dipakai endpoint riwayat publik
 
-### RLS (Row-Level Security) — D10 + D13 (BACA INI DULU SEBELUM SENTUH DATABASE)
-- [x] 6 tabel ber-RLS: entities, sources, evidences, entity_attributes, relationships, tenant_region_access
-- [x] **BUG KRITIS D13 — WAJIB DIPAHAMI:** koneksi app awalnya pakai user `postgres` (superuser). PostgreSQL OTOMATIS mengabaikan RLS untuk superuser, walau sudah FORCE ROW LEVEL SECURITY. Sudah diperbaiki: user baru `dinasti_app` (non-superuser) jadi pemilik SEMUA tabel, `.env`+`phpunit.xml` pakai kredensial ini. **KALAU NANTI ADA YANG "RESET" .env KE POSTGRES LAGI, RLS AKAN BOCOR TANPA ERROR APAPUN — TIDAK ADA WARNING.**
-- [x] Test yang membuktikan RLS itu WAJIB menguji "data yang salah TIDAK muncul" (cross-tenant boundary), bukan cuma "data yang benar muncul" — pelajaran dari insiden D13.
+### RLS (Row-Level Security) — D10 + D13 + carve-out publik (BACA SEBELUM SENTUH DATABASE)
+- [x] entities/relationships: carve-out `OR status = 'published'` — akses publik lintas-tenant buat data published
+- [x] disputes: carve-out TERPISAH, SELECT-only, `status IN ('resolved_accepted','resolved_rejected')` — TIDAK ADA carve-out INSERT/UPDATE/DELETE publik (beda dari entities/relationships)
+- [x] disputes: policy INSERT terpisah (`WITH CHECK (true)`) — aman karena tenant_id selalu di-set server-side, bukan input user
+- [x] WAJIB `NULLIF(..., '')` sebelum cast uuid di semua kondisi RLS (current_setting balikin string kosong kalau di-RESET, bukan NULL, dan itu crash bukan cuma nolak akses)
 
 ### Auth & RBAC — D11, D12
-- [x] Laravel Sanctum v4.3.3 (SPA/API token auth)
-- [x] `POST /api/login` — email ATAU username, `POST /api/logout`
-- [x] spatie/laravel-permission v8.3.0 mode "teams" (`tenant_id` sebagai team_foreign_key, BUKAN default `team_id`)
-- [x] 5 role: SUPER_ADMIN (global, tenant_id NULL), TENANT_ADMIN/RESEARCHER/LEGAL_REVIEWER (per-tenant), PUBLIC_USER (default tanpa role, TIDAK ada row di tabel roles)
-- [x] Separation of duties tervalidasi: RESEARCHER tidak bisa publish, LEGAL_REVIEWER tidak bisa create
-- [x] Custom middleware `has_role` (`app/Http/Middleware/HasRole.php`) — GANTIKAN `role:` bawaan Spatie karena bug (lihat Insiden #11)
-
-### Tenant Context Middleware — E08
-- [x] `app/Http/Middleware/TenantContext.php`, alias `tenant.context` di bootstrap/app.php
-- [x] Baca header `X-Tenant-ID`, validasi user punya role di tenant itu (atau SUPER_ADMIN) LEWAT QUERY PIVOT LANGSUNG (bukan `$user->roles()`, lihat Insiden #11), set `setPermissionsTeamId()` + `SET app.current_tenant` (buat RLS)
-- [x] Middleware `has_role` (custom, BUKAN Spatie `role` bawaan), WAJIB dipasang bersarang DI DALAM grup `tenant.context` (urutan matter!)
+- [x] Sanctum, `/login` (email/username), `/logout`
+- [x] spatie/laravel-permission mode "teams", 5 role
+- [x] Custom middleware `has_role` (GANTIKAN `role:` bawaan Spatie karena bug, Insiden #11)
 
 ### User/Profile Management API — Invite Maker-Checker
-- [x] `POST /api/invites` — TENANT_ADMIN|SUPER_ADMIN bikin undangan, status selalu `pending_approval` (TIDAK ADA auto-approve, termasuk buat SUPER_ADMIN sendiri)
-- [x] `PATCH /api/invites/{id}/approve`, `/reject` — HANYA SUPER_ADMIN, dan HANYA yang BUKAN pembuat invite itu sendiri (maker-checker separation)
-- [x] `POST /api/invites/{token}/accept` — publik (throttle:auth), bikin akun baru + assign role sesuai invite, TOLAK kalau expired/belum approved/token salah
-- [x] TENANT_ADMIN TIDAK BOLEH invite orang jadi TENANT_ADMIN (cegah privilege escalation lateral)
-- [x] Tabel `invites`: token, status (pending_approval/approved/rejected), expires_at, invited_by, approved_by
+- [x] `POST /api/invites`, `PATCH /api/invites/{id}/approve|reject`, `POST /api/invites/{token}/accept`
 
-### API Endpoint (semua di app/Modules/{Entity,Relationship,Graph}/)
-
-**Entity:** Search, Detail, Create, Update, submit-for-review, publish, request-revision — SEMUA SELESAI (lihat commit log buat detail, sudah stabil dari sesi 1-2)
-
-**Relationship (pola identik Entity):** Create, Update, submit-for-review, publish, request-revision — SEMUA SELESAI
-
-**Graph (fitur flagship D1):**
-- [x] `GET /api/entities/{id}/network?depth=N` (max 4, default 2) — Explore Network, recursive CTE, traversal dua arah, anti-infinite-loop
-- [x] `GET /api/entities/{id}/find-connection?target_id=X` — Find Connection, jalur TERPENDEK, recursive CTE + `rel_path`, TANPA parameter depth user-configurable (preseden LinkedIn "Degree of Connection"), respons `200 + connected:false` (bukan 404) kalau entity ada tapi tidak ada jalur dalam 4 hop
+### Entity/Relationship/Graph API
+- [x] Entity & Relationship: Search, Detail (`GET /api/entities/{slug}` — SLUG bukan UUID), Create, Update, submit-for-review, publish, request-revision
+- [x] `GET /api/entities/{id}/network`, `GET /api/entities/{id}/find-connection` (masih pakai UUID — beda dari endpoint detail)
 - [ ] Cross-Region Explorer — BELUM dibangun
 
-### Rate Limiting — mitigasi OWASP API4:2023 (Unrestricted Resource Consumption)
-- [x] 4 limiter bernama: `auth` (5/menit/IP, SEKARANG SUDAH TERPAKAI di `/login` dan `/invites/{token}/accept`), `graph` (guest 10/menit/IP, authenticated 30/menit/user), `search` (30/menit), `api` default (guest 20/menit, authenticated 60/menit)
-- [x] Angka disimpan terpusat di `config/rate_limits.php`, didaftarkan di `AppServiceProvider::boot()`
-- [x] Test `RateLimitingTest.php`: buktikan 429 setelah lewat batas authenticated (30/menit), request dalam batas tetap lolos
+### Dispute Submission API — Hak Jawab/Hak Koreksi (LENGKAP, sesuai API_CONTRACT.md)
+- [x] `POST /api/disputes` — publik, field `type` (hak_jawab/koreksi), identitas pelapor, `is_self_reported`, disputed_part/supporting_evidence/response_content
+- [x] Batas waktu 2 bulan HANYA berlaku utk `hak_jawab` (dihitung dari first_published_at) — `koreksi` TIDAK ada batas waktu (UU Pers Pasal 1 ayat 11 vs 12)
+- [x] `GET /api/disputes/status/{token}` — publik, cek status pakai tracking_token opaque (BUKAN email di URL — hindari kebocoran PII lewat log/Referer header)
+- [x] `PATCH /api/disputes/{id}/approve|reject` — LEGAL_REVIEWER|SUPER_ADMIN, trigger state machine Entity/Relationship yang sudah ada
+- [x] `GET /api/entities/{id}/disputes` — riwayat publik, HANYA resolved, lewat VIEW `entity_disputes_public` (kolom PII secara STRUKTURAL tidak ada di view ini)
+- [x] Modul `app/Modules/Dispute/` (domain sendiri, bukan numpang Entity/Relationship/TenantRegion)
+- [x] Morph map `entity`/`relationship` (alias stabil, bukan nama class PHP mentah)
+- [x] Rate limiter `dispute` (5/menit/IP)
 
-### Data seed — kasus Banten
-- [x] RegionSeeder, TenantSeeder ("Research Tenant Banten"), BantenCaseSeeder (3 entities, 1 source, 1 evidence, 2 relationships), RoleSeeder (4 role awal)
+### Region API
+- [x] `GET /api/regions?parent_id=` — publik, cascading dropdown Provinsi→Kab/Kota→Kecamatan→Desa
 
----
-
-## FRONTEND (REPO TERPISAH — BACA INI KALAU DITANYA SOAL FRONTEND)
-
-**PENTING:** Frontend GURITA dikerjakan di repo/akun Claude LAIN sepenuhnya, bukan di `D:\dinasti\dinasti-backend`. Kalau user tanya soal frontend, JANGAN asumsi kondisinya dari nol — tanya dulu status terbaru.
-
-**Stack frontend yang SUDAH DIKUNCI (FINAL TECHNOLOGY LOCK, blueprint v1.3):**
-- Next.js (App Router) + React + TypeScript
-- **Sigma.js + Graphology** — Cytoscape.js SUDAH DIHAPUS dari basis. **JANGAN rekomendasikan ganti balik** kecuali requirement native baru + ADR + benchmark ulang.
-- TanStack Query buat server state, PWA (Serwist)
-
-**Kontrak penting:** Backend Graph API (`/network`, `/find-connection`) SENGAJA balikin format generic (array entities + array relationships) — BUKAN format spesifik Sigma/Graphology. Transformasi itu tanggung jawab frontend.
+### Rate Limiting — OWASP API4:2023
+- [x] 5 limiter: `auth`, `dispute`, `graph`, `search`, `api`
 
 ---
 
-## INSIDEN & PELAJARAN PENTING (WAJIB DIBACA — BIAR TIDAK TERULANG)
+## FRONTEND (REPO TERPISAH)
 
-1. **`artisan make:model`/`make:controller`/`make:request` SELALU naruh file ke lokasi default Laravel**, TIDAK PERNAH ke `app/Modules/{Modul}/...`. Solusi: bikin file manual (`type nul > path\file.php`), JANGAN pakai `--path`.
+**⚠️ WAJIB BACA `API_CONTRACT.md`** — dokumen FINAL hasil negosiasi backend↔frontend (proses: draft dari backend → jawaban frontend → keputusan final backend buat 3 poin ambigu, berbasis riset). 7 keputusan final:
+1. Entity routing pakai `slug`, bukan UUID
+2. Dispute tracking via `tracking_token` opaque (BUKAN email di URL)
+3. Dispute punya `type` (hak_jawab/koreksi) sesuai UU Pers, cuma hak_jawab yang ada batas 2 bulan
+4. Upload bukti file DITUNDA (belum ada timeline pasti dari frontend)
+5. Status Hukum (`legal_cases`) DITUNDA — scope fitur besar terpisah, BELUM dikerjakan
+6. `GET /api/regions` publik — SELESAI
+7. Riwayat dispute per-entity publik, TANPA data pelapor/reviewer — SELESAI
 
-2. **RLS otomatis di-bypass PostgreSQL untuk superuser** — koneksi aplikasi WAJIB non-superuser (D13). Test WAJIB cek "data yang salah TIDAK muncul", bukan cuma "data yang benar muncul".
+**Stack locked:** Next.js + React + TypeScript, **Sigma.js + Graphology** (BUKAN Cytoscape.js), TanStack Query, PWA (Serwist).
+**Kontrak Graph API:** balikin format generic (entities+relationships), transformasi ke Graphology tanggung jawab frontend.
+**Kebutuhan API BELUM dikerjakan:** statistik agregat homepage (jumlah entitas/relasi/sumber bukti/wilayah), network graph preview publik, badge "terverifikasi" entity resolution (D5 — BELUM ada implementasinya sama sekali, JANGAN desain UI yang nunggu field ini).
 
-3. **Eloquent `::create()` TIDAK otomatis refresh nilai default kolom** — WAJIB `->refresh()` setelah `create()` kalau butuh baca default value di response.
+---
 
-4. **Query JOIN 2 tabel dengan nama kolom sama WAJIB di-qualify nama tabelnya** (`roles.tenant_id`, bukan cuma `tenant_id`).
+## INSIDEN & PELAJARAN PENTING (WAJIB DIBACA)
 
-5. **Recursive CTE traversal WAJIB array `path` anti-cycle + depth cap di level query.**
+*(1-10: struktur folder modul manual bukan artisan make:*, RLS bypass superuser D13, Eloquent create() tidak auto-refresh default DB, qualify nama tabel di JOIN, recursive CTE anti-cycle, command CMD vs kode VSCode, CRLF warning aman, state machine 1 sumber kebenaran, exists: rule otomatis ke-scope RLS, rate limiter guest unreachable di balik auth:sanctum — lihat commit history buat detail lengkap)*
 
-6. **Pastikan JELAS command CMD vs kode buat ditempel VSCode** — karakter spesial PHP bisa ke-eksekusi sebagai command CMD kalau salah taruh.
+11. **🔴 `$user->roles()` (Spatie teams mode) TIDAK BISA DIPERCAYA buat cek role LINTAS-TENANT** (termasuk SUPER_ADMIN). Spatie diam-diam nyuntik filter `model_has_roles.tenant_id = current_team`. FIX: query LANGSUNG ke `model_has_roles` pakai `DB::table()` + JOIN manual. Lihat `HasRole.php`, `TenantContext.php`.
 
-7. **Warning `CRLF will be replaced by LF` pas git itu NORMAL, aman diabaikan.**
+12. **`Relation::enforceMorphMap()` beda dari `morphMap()`.** `enforceMorphMap()` MEMAKSA SELURUH aplikasi (termasuk Spatie, Sanctum) harus terdaftar di map, bikin `ClassMorphViolationException` di fitur yang nggak ada hubungannya (role assignment, token). Pakai `morphMap()` biasa.
 
-8. **State machine WAJIB 1 sumber kebenaran tunggal** (`TRANSISI_VALID` di Service, bukan sebar ke banyak tempat).
+13. **RLS Postgres butuh POLICY TERPISAH buat INSERT vs SELECT/UPDATE/DELETE.** Policy `USING` yang ketat otomatis nolak INSERT dari request publik (app.current_tenant kosong) walau `tenant_id` yang ditulis valid. Solusi: `CREATE POLICY ... FOR INSERT WITH CHECK (true)` — aman kalau kolom sensitif selalu di-set server-side.
 
-9. **Validasi FormRequest `exists:tabel,id` OTOMATIS ke-scope RLS** — bisa dipakai gratis buat validasi "kepunyaan tenant yang sama".
+14. **`->refresh()` (atau `find()`/`findOrFail()`) setelah `create()` bisa GAGAL DIAM-DIAM di request PUBLIK pada tabel ber-RLS.** Row-nya ADA, tapi refresh() itu SELECT ulang yang tunduk RLS, ditolak tanpa tenant context → `ModelNotFoundException` → Laravel otomatis balikin `404` (bukan 500 — kelihatan kayak "route salah" bukan "masalah RLS", menyesatkan pas debug). FIX: skip `refresh()` kalau semua nilai response udah ada di memori dari array `create()`.
 
-10. **Rate limiter cabang "guest" di route yang dibungkus `auth:sanctum` itu KODE MATI** — `auth:sanctum` nolak request tanpa token duluan (401) sebelum sempat nyampe limiter.
+15. **🔴 MIGRATION (backfill data lewat `DB::table()->get()/update()`) TETAP TUNDUK RLS**, karena jalan lewat koneksi `dinasti_app` non-superuser (D13) — BUKAN cuma runtime API. Tanpa `app.current_tenant` di-set, migration cuma "lihat" baris yang lolos carve-out publik (misal `status='published'`), baris lain (draft dst) KELEWAT dari backfill — dan `ALTER COLUMN ... SET NOT NULL` di akhir migration itu DDL yang scan SEMUA baris fisik (bypass RLS), jadi nemu baris yang slug/kolomnya masih NULL dan migration GAGAL di langkah terakhir. **WAJIB `ALTER TABLE ... DISABLE ROW LEVEL SECURITY` sebelum backfill, `ENABLE`+`FORCE` lagi sesudahnya**, di SETIAP migration yang backfill data lama. Ketahuan pas migration tambah kolom `slug` ke `entities`.
 
-11. **🔴 BUG KRITIS: `$user->roles()` (relasi Eloquent Spatie mode "teams") TIDAK BISA DIPERCAYA buat cek role LINTAS-TENANT, termasuk role global (SUPER_ADMIN, `tenant_id` NULL).**
-    **Bukti forensik (dari Tinker, raw SQL):**
-```sql
-    ... where "model_has_roles"."tenant_id" = ?   ← DIAM-DIAM disuntik Spatie
-      and ("roles"."tenant_id" is null or "roles"."tenant_id" = ?)  ← kondisi kita
-      and "roles"."tenant_id" is null and "roles"."name" = ?
-```
-    Spatie nyuntik filter `model_has_roles.tenant_id = current_team` di level RELASI — filter ini ke-AND SEBELUM kondisi `.whereNull()`/`.orWhere()` apapun yang kita tempel di query builder di atasnya. Nambah kondisi manual TIDAK BISA nge-override ini karena filter pivot-nya udah lebih dulu ke-AND. Akibatnya: user dengan role global (pivot `tenant_id` NULL) SELALU keanggap "tidak punya role" begitu context pindah ke tenant manapun (`setPermissionsTeamId($tenant->id)`).
-    **Kenapa baru ketauan sekarang:** nggak ada test sebelumnya yang nguji SUPER_ADMIN beraksi di tenant context yang aktif (beda dari test RBAC dasar yang cuma cek role ke-assign, bukan role dipakai lintas-tenant).
-    **FIX WAJIB (satu-satunya cara yang terbukti benar):** JANGAN PERNAH pakai `$user->roles()` atau turunannya (`hasRole()`, dst) buat cek role kalau ada kemungkinan role itu global/lintas-tenant. Query LANGSUNG ke tabel `model_has_roles` pakai `DB::table()`, JOIN manual ke `roles`, filter `whereNull('model_has_roles.tenant_id')->orWhere('model_has_roles.tenant_id', getPermissionsTeamId())`. Lihat `app/Http/Middleware/HasRole.php` dan `app/Http/Middleware/TenantContext.php` sebagai contoh acuan yang SUDAH TERBUKTI benar lewat Tinker + test.
-    **Kalau nanti nulis pengecekan role di tempat baru manapun (Service, Controller, Policy) — WAJIB pakai pola query pivot langsung ini, JANGAN `$user->hasRole()` bawaan Spatie.**
+16. **🔴 RLS Postgres itu ROW-LEVEL, BUKAN COLUMN-LEVEL.** Kalau ada kasus "sebagian baris boleh publik, tapi sebagian KOLOM tetap harus privat" (misal: dispute yang sudah resolved boleh dibaca publik, tapi nama/email/HP pelapor tetap harus rahasia) — RLS SENDIRI TIDAK CUKUP, karena carve-out row-level otomatis buka SEMUA kolom di baris itu. **FIX (riset, rekomendasi standar): kombinasikan RLS row-level carve-out DENGAN PostgreSQL VIEW** yang secara STRUKTURAL cuma punya kolom non-sensitif — bukan cuma ngandelin aplikasi `SELECT` kolom tertentu (itu rawan lupa/bug di kode masa depan). Lihat migration `create_entity_disputes_public_view`, `DisputeService::getPublicHistoryForDisputable()` (WAJIB query VIEW, JANGAN model `Dispute` langsung buat endpoint publik). **Batasan jujur:** RLS carve-out row-level-nya sendiri berlaku di level tabel asli juga, jadi proteksi kolom penuh tetap bergantung disiplin kode (cuma lewat method/VIEW ini buat akses publik) — bukan 100% dijamin database.
 
 ---
 
 ## KEPUTUSAN DI DECISIONS.md (RINGKAS)
 
-D1 hop-limit graph (4 hop; Explore Network + Find Connection SELESAI, Cross-Region Explorer belum) · D2 pg_trgm search · D3 Event+Redis · D4 AI retrieval-then-generate · D5 entity resolution threshold · D6 bitemporal attributes · D7 legal review gate (SELESAI) · D8 UUID v7 · D9 PWA · D10 shared DB + RLS · D11 Sanctum · D12 RBAC teams mode (⚠️ lihat Insiden #11 soal bug-nya) · D13 koneksi app wajib non-superuser (KRUSIAL) · D14 frontend graph stack cross-reference (Sigma.js+Graphology locked)
+D1 hop-limit graph · D2 pg_trgm · D3 Event+Redis · D4 AI retrieval-then-generate · D5 entity resolution threshold (⚠️ BELUM diimplementasi sama sekali — lihat catatan Frontend soal badge "terverifikasi") · D6 bitemporal attributes · D7 legal review gate · D8 UUID v7 · D9 PWA · D10 shared DB + RLS (+ 2 carve-out publik) · D11 Sanctum · D12 RBAC teams mode (⚠️ Insiden #11) · D13 non-superuser (KRUSIAL, ⚠️ juga berlaku ke migration, Insiden #15) · D14 frontend Sigma.js+Graphology locked
+
+**Dokumen baru: `API_CONTRACT.md`** — kontrak FINAL backend↔frontend, 7 keputusan (lihat bagian FRONTEND di atas).
 
 ---
 
 ## BELUM DIMULAI
 
 - [ ] Cross-Region Explorer (D1)
-- [ ] Dispute Submission — jalur publik formal buat pihak luar ngajuin keberatan/koreksi resmi
-- [ ] Audit Trail lengkap (E35) — sengaja ditunda, cuma ada minimal reviewed_by/reviewed_at sekarang
-- [ ] Ganti password, kelola anggota tim per tenant (lanjutan User Management — invite+login+accept sudah ada, tapi belum ada self-service password management)
-- [ ] DDoS protection & hardening infrastruktur (Cloudflare/Deflect) — level infrastruktur, sebelum go-live
-- [ ] PostgreSQL Row-Level Security untuk tabel `roles`/`model_has_roles`/dst (Spatie tables) — belum dievaluasi apakah perlu
+- [ ] Audit Trail lengkap (E35)
+- [ ] Status Hukum / `legal_cases` (API_CONTRACT.md #5) — scope fitur besar, tabel polymorphic baru (pengadilan, nomor perkara, tanggal, status, sumber)
+- [ ] Statistik agregat homepage + network graph preview publik
+- [ ] Entity Resolution pipeline (D5) — badge "terverifikasi" frontend nunggu ini
+- [ ] Upload dokumen/bukti dispute (API_CONTRACT.md #4, ditunda, belum ada timeline)
+- [ ] Ganti password/kelola anggota tim
+- [ ] DDoS protection & hardening infrastruktur
+- [ ] RLS untuk tabel Spatie (`roles`/`model_has_roles`)
 
 ---
 
 ## CATATAN LAIN
 
-- User (pemilik project) adalah guru honorer, BUKAN software engineer — selalu jelaskan istilah teknis dalam bahasa awam sebelum eksekusi kalau terasa perlu.
-- Motivasi user: idealisme personal memberantas dinasti politik kotor di Indonesia, BUKAN order klien.
-- Preferensi kerja: SATU langkah per giliran, command CMD siap-tempel, tunggu konfirmasi. `code <path>` DISUSUL LANGSUNG isi kode di pesan yang sama. Edit kode TIDAK perlu diverifikasi ulang setelah "dah" — andalkan hasil test/error.
-- **Struktur sesi:** Sesi 1 & 2 backend pakai akun Claude lain (sudah selesai). Sesi 3 (akun ini) lanjutin. Frontend jalur SAMA SEKALI TERPISAH (akun lain, repo lain).
+- User adalah guru honorer, BUKAN software engineer — jelaskan istilah teknis dalam bahasa awam.
+- Motivasi: idealisme personal memberantas dinasti politik kotor di Indonesia.
+- Preferensi kerja: SATU langkah per giliran, command CMD siap-tempel, tunggu konfirmasi. `code <path>` DISUSUL LANGSUNG isi kode. Edit kode TIDAK perlu diverifikasi ulang setelah "dah" **KECUALI user eksplisit minta verifikasi (biasanya kalau ada indikasi error/Find & Replace nggak exact) — dalam kasus itu, WAJIB minta paste isi lengkap file, jangan asumsi Find & Replace berhasil.** User lebih suka Find & Replace (Ctrl+H) exact daripada instruksi ambigu.
+- Struktur sesi: Sesi 1 & 2 backend akun Claude lain (selesai). Sesi 3 (akun ini) lanjutin. Frontend jalur SAMA SEKALI TERPISAH (akun lain) — koordinasi lewat dokumen `API_CONTRACT.md` yang dibawa bolak-balik user, bukan komunikasi langsung antar sesi.
 - Root folder dokumentasi blueprint backend asli: `D:\PROJECT IMPIAN\Fix Blueprint Peta Gurita\`
 
 ---
@@ -162,8 +146,6 @@ D1 hop-limit graph (4 hop; Explore Network + Find Connection SELESAI, Cross-Regi
 ## CHANGE LOG
 | Tanggal | Update |
 |---|---|
-| 2026-08-12 | File dibuat. Progress s/d Sanctum install lengkap dicatat. |
-| 2026-08-13 | RBAC (D12), E08 Middleware, RLS (D10) selesai + bug kritis D13 ditemukan&diperbaiki, Entity Search+Detail API. |
-| 2026-08-14 | Entity Create/Update/Review, Relationship Create/Update/Review (D7 lengkap), Graph Traversal Explore Network (D1) selesai. 64/64 test. |
-| 2026-08-15 | Rate Limiting selesai (OWASP API4:2023). Find Connection API (D1) selesai. User/Profile Management API (Invite maker-checker + Login) mulai dikerjakan. |
-| 2026-08-17 | **Insiden #11 ditemukan & diperbaiki**: bug kritis Spatie teams-mode, `$user->roles()` exclude role global lintas-tenant — dibuktikan lewat Tinker, di-fix di `HasRole.php` + `TenantContext.php` pakai query pivot langsung. User/Profile Management API SELESAI (invite maker-checker, login email/username). **86/86 test PASS.** Commit terakhir 0a5fb1a. |
+| 2026-08-12 s/d 2026-08-15 | Lihat commit log — fondasi Auth+RBAC+RLS, CRUD Entity/Relationship+D7, Explore Network, Rate Limiting, Find Connection, User Management dimulai. |
+| 2026-08-17 | Insiden #11 (Spatie teams bug), User Management selesai, RLS carve-out publik (entities/relationships), Dispute Submission API dasar (Hak Jawab UU Pers No 40/1999). 97/97 test. |
+| 2026-08-18 | Diskusi 3 blueprint frontend + ilustrasi visual → `API_CONTRACT_DRAFT.md` → respons frontend → `API_CONTRACT.md` FINAL (7 keputusan). Implementasi penuh: slug routing entity, dispute type+tracking_token+is_self_reported, endpoint status publik, `GET /api/regions`, riwayat dispute publik via VIEW. Insiden #12-#16 ditemukan & diperbaiki (morphMap, RLS insert/select terpisah, refresh() vs RLS publik, **migration tunduk RLS**, **RLS row-level butuh VIEW buat column-level**). **102/102 test PASS.** Commit terakhir ce761b0. |
