@@ -84,7 +84,7 @@ class DisputeService
         ]);
     }
 
-        /**
+    /**
      * Cek status pengajuan secara PUBLIK — cukup modal tracking_token
      * (API_CONTRACT.md Keputusan #2), bukan email (hindari PII di URL).
      */
@@ -115,9 +115,6 @@ class DisputeService
         $dispute = $this->findPending($disputeId);
         $disputable = $this->resolveDisputable($dispute->disputable_type, $dispute->disputable_id);
 
-        // Delegasi ke Service state machine yang SUDAH ADA (D7) — bukan
-        // nulis ulang logic transisi status di sini (satu sumber
-        // kebenaran, CONVENTIONS §2.4C).
         if ($disputable instanceof Entity) {
             $this->entityReviewService->requestRevision($disputable, $resolver);
         } else {
