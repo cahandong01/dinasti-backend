@@ -18,14 +18,15 @@ Referensi wajib: CONVENTIONS.md, DECISIONS.md, **API_CONTRACT.md** (satu folder 
 
 ---
 
-## STATUS RINGKAS (per 2026-08-18)
+## STATUS RINGKAS (per 2026-08-20)
 
 **Fase sekarang:** Phase 1 — MVP Foundation, mendekati selesai
 **Stack backend terkonfirmasi:** Laravel 13.24.0, PostgreSQL 18 lokal, Redis (Predis), Pest PHP
-**Total test:** 102/102 PASSED
-**Repo backend:** github.com/cahandong01/dinasti-backend (commit terakhir: ce761b0)
+**Total test:** 106/106 PASSED
+**Repo backend:** github.com/cahandong01/dinasti-backend (commit terakhir: d36c647, SUDAH di-push)
 **Kredensial DB:** WAJIB `dinasti_app` (non-superuser), lihat D13.
-**⚠️ WAJIB BACA sebelum kerja apapun soal role/RLS/migration:** Insiden #11-#16 di bawah.
+**⚠️ WAJIB BACA sebelum kerja apapun soal role/RLS/migration:** Insiden #11-#17 di bawah.
+**⚠️ WAJIB PUSH setiap sesi kerja selesai** — sesi frontend cuma bisa lihat progress backend lewat GitHub, bukan folder lokal. Commit yang numpuk tanpa push bikin frontend salah asumsi "belum dikerjakan" (kejadian nyata 2026-08-19/20, lihat Insiden #17).
 **⚠️ WAJIB BACA sebelum kerja frontend-related apapun:** `API_CONTRACT.md` — dokumen kontrak FINAL yang disepakati bareng sesi frontend, 7 keputusan (slug routing, tracking_token, dispute type, upload file ditunda, status hukum ditunda, endpoint regions, riwayat dispute publik).
 
 ---
@@ -55,6 +56,8 @@ Referensi wajib: CONVENTIONS.md, DECISIONS.md, **API_CONTRACT.md** (satu folder 
 
 ### Entity/Relationship/Graph API
 - [x] Entity & Relationship: Search, Detail (`GET /api/entities/{slug}` — SLUG bukan UUID), Create, Update, submit-for-review, publish, request-revision
+- [x] **Search & Detail SEKARANG bisa diakses PUBLIK tanpa login** — 1 endpoint, 2 mode (optional auth Sanctum): tanpa token → cuma `published` lintas-tenant; dengan token+X-Tenant-ID → semua status di tenant sendiri (perilaku lama, tidak berubah). Middleware baru `tenant.context.optional`, lihat `OptionalTenantContext.php`
+- [x] RLS carve-out publik diperluas ke rantai evidence (`entity_attributes`, `evidences`, `sources`) — sebelumnya cuma `entities`/`relationships`, jadi detail entity publik crash 500 kalau ada atribut/evidence (lihat Insiden #17)
 - [x] `GET /api/entities/{id}/network`, `GET /api/entities/{id}/find-connection` (masih pakai UUID — beda dari endpoint detail)
 - [ ] Cross-Region Explorer — BELUM dibangun
 
@@ -109,6 +112,10 @@ Referensi wajib: CONVENTIONS.md, DECISIONS.md, **API_CONTRACT.md** (satu folder 
 
 16. **🔴 RLS Postgres itu ROW-LEVEL, BUKAN COLUMN-LEVEL.** Kalau ada kasus "sebagian baris boleh publik, tapi sebagian KOLOM tetap harus privat" (misal: dispute yang sudah resolved boleh dibaca publik, tapi nama/email/HP pelapor tetap harus rahasia) — RLS SENDIRI TIDAK CUKUP, karena carve-out row-level otomatis buka SEMUA kolom di baris itu. **FIX (riset, rekomendasi standar): kombinasikan RLS row-level carve-out DENGAN PostgreSQL VIEW** yang secara STRUKTURAL cuma punya kolom non-sensitif — bukan cuma ngandelin aplikasi `SELECT` kolom tertentu (itu rawan lupa/bug di kode masa depan). Lihat migration `create_entity_disputes_public_view`, `DisputeService::getPublicHistoryForDisputable()` (WAJIB query VIEW, JANGAN model `Dispute` langsung buat endpoint publik). **Batasan jujur:** RLS carve-out row-level-nya sendiri berlaku di level tabel asli juga, jadi proteksi kolom penuh tetap bergantung disiplin kode (cuma lewat method/VIEW ini buat akses publik) — bukan 100% dijamin database.
 
+17. **🔴 Commit lokal yang NGGAK di-push itu INVISIBLE buat sesi frontend — mereka cuma bisa cek progress backend lewat GitHub, bukan folder lokal user.** Kejadian nyata: 17 commit (semua kerjaan Dispute Submission, slug, RLS carve-out, dst) numpuk lokal tanpa di-push, sesi frontend investigasi ke GitHub dan nemuin state LAMA (`AppServiceProvider.php` masih kosong versi awal) — laporan gap mereka akurat buat apa yang mereka lihat, tapi menyesatkan karena kerjaan sebenarnya udah jauh lebih maju. **WAJIB `git push origin main` di akhir SETIAP sesi kerja yang ngasilin commit** — bukan cuma commit lokal doang, terutama kalau lagi ada kerjaan yang overlap sama frontend (endpoint publik, kontrak API).
+
+    Insiden kedua yang sama harinya: endpoint `search`/`{slug}` entity ternyata masih dibungkus `auth:sanctum` wajib login, padahal RLS carve-out publik-nya udah dibangun dari awal — fondasi database-nya ada, tapi rute HTTP-nya nggak pernah dibuka buat manfaatin itu. **Fix: middleware `tenant.context.optional`** (pola resmi Laravel Sanctum "optional auth" — jangan paksa `auth:sanctum`, resolve `$request->user('sanctum')` manual, balikin `null` buat tamu bukan `401`). 1 route, 2 perilaku, tergantung ada token atau nggak.
+
 ---
 
 ## KEPUTUSAN DI DECISIONS.md (RINGKAS)
@@ -148,4 +155,5 @@ D1 hop-limit graph · D2 pg_trgm · D3 Event+Redis · D4 AI retrieval-then-gener
 |---|---|
 | 2026-08-12 s/d 2026-08-15 | Lihat commit log — fondasi Auth+RBAC+RLS, CRUD Entity/Relationship+D7, Explore Network, Rate Limiting, Find Connection, User Management dimulai. |
 | 2026-08-17 | Insiden #11 (Spatie teams bug), User Management selesai, RLS carve-out publik (entities/relationships), Dispute Submission API dasar (Hak Jawab UU Pers No 40/1999). 97/97 test. |
-| 2026-08-18 | Diskusi 3 blueprint frontend + ilustrasi visual → `API_CONTRACT_DRAFT.md` → respons frontend → `API_CONTRACT.md` FINAL (7 keputusan). Implementasi penuh: slug routing entity, dispute type+tracking_token+is_self_reported, endpoint status publik, `GET /api/regions`, riwayat dispute publik via VIEW. Insiden #12-#16 ditemukan & diperbaiki (morphMap, RLS insert/select terpisah, refresh() vs RLS publik, **migration tunduk RLS**, **RLS row-level butuh VIEW buat column-level**). **102/102 test PASS.** Commit terakhir ce761b0. |
+| 2026-08-18 | Diskusi 3 blueprint frontend + ilustrasi visual → `API_CONTRACT_DRAFT.md` → respons frontend → `API_CONTRACT.md` FINAL (7 keputusan). Implementasi penuh: slug routing entity, dispute type+tracking_token+is_self_reported, endpoint status publik, `GET /api/regions`, riwayat dispute publik via VIEW. Insiden #12-#16 ditemukan & diperbaiki (morphMap, RLS insert/select terpisah, refresh() vs RLS publik, migration tunduk RLS, RLS row-level butuh VIEW buat column-level). 102/102 test PASS. |
+| 2026-08-19/20 | Sesi frontend lapor gap via `GAP_API_CONTRACT_UNTUK_BACKEND.md` — ternyata 17 commit lokal belum ke-push (Insiden #17), PLUS search/detail entity ternyata masih wajib login walau RLS carve-out-nya udah ada. Push 17 commit lama + fix: middleware `tenant.context.optional` (optional auth Sanctum), RLS carve-out publik diperluas ke rantai evidence (entity_attributes/evidences/sources). Balasan status dikirim ke frontend via `BALASAN_GAP_API_UNTUK_FRONTEND.md`. **106/106 test PASS.** Commit terakhir d36c647, SUDAH di-push. |
