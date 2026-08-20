@@ -15,6 +15,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
             'tenant.context' => \App\Http\Middleware\TenantContext::class,
+            'tenant.context.optional' => \App\Http\Middleware\OptionalTenantContext::class,
             'role' => \Spatie\Permission\Middleware\RoleMiddleware::class,
             'has_role' => \App\Http\Middleware\HasRole::class,
         ]);

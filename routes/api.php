@@ -30,13 +30,17 @@ Route::get('/user', function (Request $request) {
 
 Route::post('/logout', [AuthController::class, 'logout'])->middleware(['auth:sanctum', 'throttle:api']);
 
-Route::middleware(['auth:sanctum', 'tenant.context'])->group(function () {
-
+// Search & detail entity — bisa diakses TAMU (publik, data published
+// saja, lewat RLS carve-out) MAUPUN user login (internal, semua status
+// di tenant-nya). Middleware optional, BUKAN auth:sanctum wajib.
+Route::middleware(['tenant.context.optional'])->group(function () {
     Route::get('/entities/search', [EntitySearchController::class, 'search'])
         ->middleware('throttle:search');
-
-        Route::get('/entities/{slug}', [EntityDetailController::class, 'show'])
+    Route::get('/entities/{slug}', [EntityDetailController::class, 'show'])
         ->middleware('throttle:api');
+});
+
+Route::middleware(['auth:sanctum', 'tenant.context'])->group(function () {
 
     Route::get('/entities/{id}/network', [NetworkExploreController::class, 'explore'])
         ->middleware('throttle:graph');
