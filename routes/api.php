@@ -16,8 +16,11 @@ use App\Modules\TenantRegion\Controllers\AuthController;
 use App\Modules\TenantRegion\Controllers\InviteController;
 use App\Modules\Dispute\Controllers\DisputeController;
 use App\Modules\TenantRegion\Controllers\RegionController;
+use App\Modules\Homepage\Controllers\HomepageStatsController;
 
 Route::get('/regions', [RegionController::class, 'index'])->middleware('throttle:api');
+Route::get('/homepage/stats', [HomepageStatsController::class, 'stats'])->middleware('throttle:api');
+Route::get('/homepage/preview-network', [HomepageStatsController::class, 'previewNetwork'])->middleware('throttle:graph');
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:auth');
 Route::post('/invites/{token}/accept', [InviteController::class, 'accept'])->middleware('throttle:auth');
 Route::post('/disputes', [DisputeController::class, 'store'])->middleware('throttle:dispute');
