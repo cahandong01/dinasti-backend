@@ -21,9 +21,10 @@ Referensi wajib: CONVENTIONS.md, DECISIONS.md, **API_CONTRACT.md** (satu folder 
 ## STATUS RINGKAS (per 2026-08-20)
 
 **Fase sekarang:** Phase 1 — MVP Foundation, mendekati selesai
+**Konteks project:** idealis, TANPA batasan waktu/deadline — tim cuma user + Claude. Target: buktikan MVP jalan dulu, baru gandeng lembaga (PUKAT UGM, ICW) buat eksplorasi lanjutan.
 **Stack backend terkonfirmasi:** Laravel 13.24.0, PostgreSQL 18 lokal, Redis (Predis), Pest PHP
-**Total test:** 106/106 PASSED
-**Repo backend:** github.com/cahandong01/dinasti-backend (commit terakhir: d36c647, SUDAH di-push)
+**Total test:** 108/108 PASSED
+**Repo backend:** github.com/cahandong01/dinasti-backend (commit terakhir: 9fe076d, SUDAH di-push)
 **Kredensial DB:** WAJIB `dinasti_app` (non-superuser), lihat D13.
 **⚠️ WAJIB BACA sebelum kerja apapun soal role/RLS/migration:** Insiden #11-#17 di bawah.
 **⚠️ WAJIB PUSH setiap sesi kerja selesai** — sesi frontend cuma bisa lihat progress backend lewat GitHub, bukan folder lokal. Commit yang numpuk tanpa push bikin frontend salah asumsi "belum dikerjakan" (kejadian nyata 2026-08-19/20, lihat Insiden #17).
@@ -76,6 +77,11 @@ Referensi wajib: CONVENTIONS.md, DECISIONS.md, **API_CONTRACT.md** (satu folder 
 
 ### Rate Limiting — OWASP API4:2023
 - [x] 5 limiter: `auth`, `dispute`, `graph`, `search`, `api`
+
+### Homepage API
+- [x] `GET /api/homepage/stats` — publik, `{entities, relationships, sources, regions}` hitung real-time (bukan cache — data masih kecil, YAGNI), cuma data `published`. `regions` = level provinsi doang
+- [x] `GET /api/homepage/preview-network` — publik, cuplikan graph dari entity published paling banyak koneksi, manfaatin `NetworkExploreService` yang sudah ada (bukan CTE baru)
+- [x] ⚠️ **Data ASLI di database sekarang MASIH SANGAT KECIL** (cuma seeder demo Banten, bukan produksi) — endpoint ini correct-by-construction tapi angkanya bakal jauh dari mockup desain frontend sampai ada input data manual beneran (lihat catatan Data Acquisition di bawah)
 
 ---
 
@@ -131,8 +137,8 @@ D1 hop-limit graph · D2 pg_trgm · D3 Event+Redis · D4 AI retrieval-then-gener
 - [ ] Cross-Region Explorer (D1)
 - [ ] Audit Trail lengkap (E35)
 - [ ] Status Hukum / `legal_cases` (API_CONTRACT.md #5) — scope fitur besar, tabel polymorphic baru (pengadilan, nomor perkara, tanggal, status, sumber)
-- [ ] Statistik agregat homepage + network graph preview publik
 - [ ] Entity Resolution pipeline (D5) — badge "terverifikasi" frontend nunggu ini
+- [ ] **Data Acquisition & Intelligence Processing pipeline** (blueprint MVP v1.0 sudah ada, dibagikan user) — Source Registry → Crawler deterministic → Parser/Cleaner → Hash/Dedup → Rule Engine (regex/pattern, BUKAN AI) → Candidate → Human Verification → Evidence → Knowledge Graph. AI cuma opsional buat kasus ambigu, bukan dependency wajib. **BELUM MULAI SAMA SEKALI** — scope besar (5-10x lipat semua yang sudah dibangun), butuh sesi perencanaan sendiri. Prasyarat yang belum ada: (a) keputusan skema — status pipeline candidate itu tabel terpisah SEBELUM masuk `entities`, atau perluasan state machine D7 yang sudah ada?, (b) infrastruktur hosting produksi (crawler butuh jalan 24/7, sekarang semua masih lokal di laptop user)
 - [ ] Upload dokumen/bukti dispute (API_CONTRACT.md #4, ditunda, belum ada timeline)
 - [ ] Ganti password/kelola anggota tim
 - [ ] DDoS protection & hardening infrastruktur
@@ -156,4 +162,4 @@ D1 hop-limit graph · D2 pg_trgm · D3 Event+Redis · D4 AI retrieval-then-gener
 | 2026-08-12 s/d 2026-08-15 | Lihat commit log — fondasi Auth+RBAC+RLS, CRUD Entity/Relationship+D7, Explore Network, Rate Limiting, Find Connection, User Management dimulai. |
 | 2026-08-17 | Insiden #11 (Spatie teams bug), User Management selesai, RLS carve-out publik (entities/relationships), Dispute Submission API dasar (Hak Jawab UU Pers No 40/1999). 97/97 test. |
 | 2026-08-18 | Diskusi 3 blueprint frontend + ilustrasi visual → `API_CONTRACT_DRAFT.md` → respons frontend → `API_CONTRACT.md` FINAL (7 keputusan). Implementasi penuh: slug routing entity, dispute type+tracking_token+is_self_reported, endpoint status publik, `GET /api/regions`, riwayat dispute publik via VIEW. Insiden #12-#16 ditemukan & diperbaiki (morphMap, RLS insert/select terpisah, refresh() vs RLS publik, migration tunduk RLS, RLS row-level butuh VIEW buat column-level). 102/102 test PASS. |
-| 2026-08-19/20 | Sesi frontend lapor gap via `GAP_API_CONTRACT_UNTUK_BACKEND.md` — ternyata 17 commit lokal belum ke-push (Insiden #17), PLUS search/detail entity ternyata masih wajib login walau RLS carve-out-nya udah ada. Push 17 commit lama + fix: middleware `tenant.context.optional` (optional auth Sanctum), RLS carve-out publik diperluas ke rantai evidence (entity_attributes/evidences/sources). Balasan status dikirim ke frontend via `BALASAN_GAP_API_UNTUK_FRONTEND.md`. **106/106 test PASS.** Commit terakhir d36c647, SUDAH di-push. |
+| 2026-08-19/20 | Sesi frontend lapor gap via `GAP_API_CONTRACT_UNTUK_BACKEND.md` — ternyata 17 commit lokal belum ke-push (Insiden #17), PLUS search/detail entity ternyata masih wajib login walau RLS carve-out-nya udah ada. Push 17 commit lama + fix: middleware `tenant.context.optional` (optional auth Sanctum), RLS carve-out publik diperluas ke rantai evidence (entity_attributes/evidences/sources). Balasan status dikirim ke frontend via `BALASAN_GAP_API_UNTUK_FRONTEND.md`. Endpoint statistik + preview network homepage (publik). User share blueprint besar "Data Acquisition & Intelligence Processing MVP v1.0" — dicatat sebagai referensi Tahap 4 jangka panjang, BELUM dikerjakan. Disadari data asli di database masih sangat kecil (cuma seeder demo) — pengisian data manual jadi PR terpisah user, bukan blocker teknis. **108/108 test PASS.** Commit terakhir 9fe076d, SUDAH di-push. |
